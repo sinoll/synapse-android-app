@@ -55,3 +55,5 @@ keystore.properties
 # ===== 系统文件 =====
 .DS_Store
 Thumbs.db
+# == server address ==
+app/src/development/res/xml/network_security_config.xml

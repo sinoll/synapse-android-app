@@ -2,6 +2,6 @@
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">
-        <domain>192.168.10.10</domain>
+        <domain>192.168.8.10</domain>
     </domain-config>
 </network-security-config>
