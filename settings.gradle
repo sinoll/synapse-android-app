@@ -1,0 +1,2 @@
+rootProject.name = "synapse-app"
+include ':app'
