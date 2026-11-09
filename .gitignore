@@ -47,7 +47,7 @@ lint/tmp/
 *.jks
 *.keystore
 keystore.properties
-# google-services.json    # 如果仓库是公开的,建议取消注释
+google-services.json    # 如果仓库是公开的,建议取消注释
 
 # ===== 日志 =====
 *.log
