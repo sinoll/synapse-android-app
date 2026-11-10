@@ -1,46 +1,17 @@
 package com.sinoll.synapse_app.ui.home;
 
-import android.os.Bundle;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.TextView;
+import com.sinoll.synapse_app.data.model.ContentType;
+import com.sinoll.synapse_app.ui.content.ContentListFragment;
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import androidx.fragment.app.Fragment;
-import androidx.lifecycle.Observer;
-import androidx.lifecycle.ViewModelProvider;
+public final class HomeFragment extends ContentListFragment {
 
-import com.sinoll.synapse_app.R;
-import com.sinoll.synapse_app.databinding.FragmentHomeBinding;
-
-public class HomeFragment extends Fragment {
-
-    private HomeViewModel homeViewModel;
-    private FragmentHomeBinding binding;
-
-    public View onCreateView(@NonNull LayoutInflater inflater,
-                             ViewGroup container, Bundle savedInstanceState) {
-        homeViewModel =
-                new ViewModelProvider(this, new ViewModelProvider.NewInstanceFactory()).get(HomeViewModel.class);
-
-        binding = FragmentHomeBinding.inflate(inflater, container, false);
-        View root = binding.getRoot();
-
-        final TextView textView = binding.textHome;
-        homeViewModel.getText().observe(getViewLifecycleOwner(), new Observer<String>() {
-            @Override
-            public void onChanged(@Nullable String s) {
-                textView.setText(s);
-            }
-        });
-        return root;
+    @Override
+    protected ContentType initialContentType() {
+        return ContentType.BLOG;
     }
 
     @Override
-    public void onDestroyView() {
-        super.onDestroyView();
-        binding = null;
+    protected boolean showsTypeSelector() {
+        return true;
     }
 }

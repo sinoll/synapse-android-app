@@ -3,9 +3,9 @@ plugins {
 }
 
 def apiBaseUrls = [
-    development: (findProperty('apiBaseUrlDevelopment') ?: 'http://192.168.10.10').toString(),
-    staging: (findProperty('apiBaseUrlStaging') ?: 'http://192.168.10.10').toString(),
-    production: (findProperty('apiBaseUrlProduction') ?: '').toString()
+    development: (findProperty('apiBaseUrlDevelopment') ?: 'http://192.168.10.10/').toString(),
+    staging: (findProperty('apiBaseUrlStaging') ?: 'https://192.168.10.10/').toString(),
+    production: (findProperty('apiBaseUrlProduction') ?: 'https://192.168.10.10/').toString()
 ]
 
 def buildConfigString = { value ->
@@ -85,6 +85,9 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-viewmodel:2.3.1'
     implementation 'androidx.navigation:navigation-fragment:2.3.5'
     implementation 'androidx.navigation:navigation-ui:2.3.5'
+    implementation 'androidx.recyclerview:recyclerview:1.2.1'
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
+    implementation 'androidx.viewpager2:viewpager2:1.0.0'
     implementation 'com.google.android.material:material:1.4.0'
 
     testImplementation 'junit:junit:4.13.2'

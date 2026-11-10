@@ -9,17 +9,51 @@
         android:id="@+id/navigation_home"
         android:name="com.sinoll.synapse_app.ui.home.HomeFragment"
         android:label="@string/title_home"
-        tools:layout="@layout/fragment_home" />
+        tools:layout="@layout/fragment_content_list">
+        <action
+            android:id="@+id/action_home_to_content_detail"
+            app:destination="@id/content_detail" />
+    </fragment>
 
     <fragment
         android:id="@+id/navigation_dashboard"
-        android:name="com.sinoll.synapse_app.ui.dashboard.DashboardFragment"
+        android:name="com.sinoll.synapse_app.ui.dashboard.VideoFeedFragment"
         android:label="@string/title_dashboard"
-        tools:layout="@layout/fragment_dashboard" />
+        tools:layout="@layout/fragment_video_feed" />
 
     <fragment
         android:id="@+id/navigation_notifications"
         android:name="com.sinoll.synapse_app.ui.notifications.NotificationsFragment"
         android:label="@string/title_notifications"
-        tools:layout="@layout/fragment_notifications" />
+        tools:layout="@layout/fragment_profile">
+        <action
+            android:id="@+id/action_profile_to_my_content"
+            app:destination="@id/my_content" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/my_content"
+        android:name="com.sinoll.synapse_app.ui.profile.MyContentFragment"
+        android:label="@string/profile_my_content_title"
+        tools:layout="@layout/fragment_content_list">
+        <argument
+            android:name="user_id"
+            app:argType="integer" />
+        <action
+            android:id="@+id/action_my_content_to_content_detail"
+            app:destination="@id/content_detail" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/content_detail"
+        android:name="com.sinoll.synapse_app.ui.content.ContentDetailFragment"
+        android:label="@string/content_detail_title"
+        tools:layout="@layout/fragment_content_detail">
+        <argument
+            android:name="content_type"
+            app:argType="string" />
+        <argument
+            android:name="content_id"
+            app:argType="integer" />
+    </fragment>
 </navigation>
