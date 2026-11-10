@@ -1,7 +1,6 @@
 package com.sinoll.synapse_app.ui.notifications;
 
 import android.app.AlertDialog;
-import android.os.CountDownTimer;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.LayoutInflater;
@@ -16,26 +15,34 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.Navigation;
+import androidx.recyclerview.widget.DividerItemDecoration;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.google.android.material.snackbar.Snackbar;
 import com.sinoll.synapse_app.R;
+import com.sinoll.synapse_app.data.model.ContentItem;
+import com.sinoll.synapse_app.ui.content.ContentDetailFragment;
+import com.sinoll.synapse_app.ui.content.RemoteImageLoader;
 import com.sinoll.synapse_app.ui.profile.AccountViewModel;
-import com.sinoll.synapse_app.ui.profile.MyContentFragment;
 
 import org.json.JSONObject;
 
 public final class NotificationsFragment extends Fragment {
 
     private AccountViewModel accountViewModel;
+    private PublishedContentViewModel publishedContentViewModel;
+    private MyContentAdapter adapter;
+    private RemoteImageLoader avatarLoader;
+    private android.widget.ImageView avatarView;
+    private View loginButton;
+    private View logoutButton;
     private TextView nameView;
     private TextView subtitleView;
     private TextView messageView;
-    private View loginButton;
-    private View registerButton;
-    private View passwordButton;
-    private View myContentButton;
-    private View logoutButton;
-    private CountDownTimer codeCountdown;
+    private TextView stateView;
+    private SwipeRefreshLayout refreshLayout;
 
     @Nullable
     @Override
@@ -48,42 +55,102 @@ public final class NotificationsFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
         accountViewModel = new ViewModelProvider(this).get(AccountViewModel.class);
+        publishedContentViewModel =
+                new ViewModelProvider(this).get(PublishedContentViewModel.class);
+
+        avatarView = view.findViewById(R.id.profile_avatar);
+        avatarLoader = new RemoteImageLoader();
         nameView = view.findViewById(R.id.profile_name);
         subtitleView = view.findViewById(R.id.profile_subtitle);
         messageView = view.findViewById(R.id.profile_message);
-        loginButton = view.findViewById(R.id.profile_login);
-        registerButton = view.findViewById(R.id.profile_register);
-        passwordButton = view.findViewById(R.id.profile_password);
-        myContentButton = view.findViewById(R.id.profile_my_content);
-        logoutButton = view.findViewById(R.id.profile_logout);
+        stateView = view.findViewById(R.id.profile_content_state);
+        refreshLayout = view.findViewById(R.id.profile_content_refresh);
 
+        loginButton = view.findViewById(R.id.profile_login);
         loginButton.setOnClickListener(ignored -> showLoginDialog());
-        registerButton.setOnClickListener(ignored -> showRegisterDialog());
-        passwordButton.setOnClickListener(ignored -> showPasswordDialog());
-        myContentButton.setOnClickListener(ignored -> openMyContent());
+        logoutButton = view.findViewById(R.id.profile_logout);
         logoutButton.setOnClickListener(ignored -> accountViewModel.logout());
+
+        RecyclerView contentList = view.findViewById(R.id.profile_content_list);
+        contentList.setLayoutManager(new LinearLayoutManager(requireContext()));
+        contentList.addItemDecoration(new DividerItemDecoration(
+                requireContext(), DividerItemDecoration.VERTICAL));
+        adapter = new MyContentAdapter(this::openDetail);
+        contentList.setAdapter(adapter);
+        contentList.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                super.onScrolled(recyclerView, dx, dy);
+                RecyclerView.LayoutManager layoutManager = recyclerView.getLayoutManager();
+                if (dy > 0 && layoutManager instanceof LinearLayoutManager
+                        && ((LinearLayoutManager) layoutManager)
+                        .findLastVisibleItemPosition() >= adapter.getItemCount() - 3) {
+                    publishedContentViewModel.loadNextPage();
+                }
+            }
+        });
+        refreshLayout.setOnRefreshListener(() -> {
+            if (accountViewModel.getUser().getValue() == null) {
+                refreshLayout.setRefreshing(false);
+            } else {
+                publishedContentViewModel.refresh();
+            }
+        });
 
         accountViewModel.getUser().observe(getViewLifecycleOwner(), this::showUser);
         accountViewModel.getMessage().observe(getViewLifecycleOwner(), this::showMessage);
+        publishedContentViewModel.getItems().observe(getViewLifecycleOwner(), items -> {
+            adapter.submitItems(items);
+            renderContentState();
+        });
+        publishedContentViewModel.getLoading().observe(getViewLifecycleOwner(), loading -> {
+            refreshLayout.setRefreshing(Boolean.TRUE.equals(loading) && adapter.getItemCount() > 0);
+            renderContentState();
+        });
+        publishedContentViewModel.getErrorMessage().observe(getViewLifecycleOwner(), message -> {
+            if (message == null || message.trim().isEmpty()) {
+                return;
+            }
+            if (adapter.getItemCount() == 0) {
+                stateView.setText(message);
+                stateView.setVisibility(View.VISIBLE);
+            } else {
+                Snackbar.make(view, message, Snackbar.LENGTH_LONG).show();
+            }
+        });
         accountViewModel.refreshSession();
     }
 
     private void showUser(@Nullable JSONObject user) {
-        boolean loggedIn = user != null;
+        JSONObject account = user == null ? null : user.optJSONObject("user");
+        if (account == null) {
+            account = user;
+        }
+        int userId = account == null ? 0
+                : account.optInt("id", account.optInt("user_id", 0));
+        String authorization = accountViewModel.getAuthorizationHeader();
+        boolean loggedIn = account != null && userId > 0 && authorization != null;
         loginButton.setVisibility(loggedIn ? View.GONE : View.VISIBLE);
-        registerButton.setVisibility(loggedIn ? View.GONE : View.VISIBLE);
-        passwordButton.setVisibility(loggedIn ? View.VISIBLE : View.GONE);
-        myContentButton.setVisibility(loggedIn ? View.VISIBLE : View.GONE);
         logoutButton.setVisibility(loggedIn ? View.VISIBLE : View.GONE);
-        if (loggedIn) {
-            String name = user.optString("nickname",
-                    user.optString("username", user.optString("email", "")));
-            nameView.setText(name.isEmpty() ? getString(R.string.profile_welcome) : name);
-            subtitleView.setText(user.optString("email", ""));
-        } else {
+        if (!loggedIn) {
             nameView.setText(R.string.profile_welcome);
             subtitleView.setText(R.string.profile_subtitle);
+            avatarLoader.load("", avatarView, R.drawable.ic_avatar_default);
+            publishedContentViewModel.clear();
+            renderContentState();
+            return;
         }
+
+        String name = account.optString("nickname",
+                account.optString("username", account.optString("email", "")));
+        nameView.setText(name.isEmpty() ? getString(R.string.profile_welcome) : name);
+        String email = account.optString("email", "");
+        subtitleView.setText(email.isEmpty()
+                ? account.optString("username", "") : email);
+        avatarLoader.load(account.optString("avatar_url", ""), avatarView,
+                R.drawable.ic_avatar_default);
+
+        publishedContentViewModel.loadFirstPage(userId, authorization);
     }
 
     private void showMessage(@Nullable String message) {
@@ -95,8 +162,32 @@ public final class NotificationsFragment extends Fragment {
         messageView.setVisibility(View.VISIBLE);
     }
 
+    private void renderContentState() {
+        if (adapter == null || stateView == null || publishedContentViewModel == null) {
+            return;
+        }
+        if (accountViewModel.getUser().getValue() == null) {
+            stateView.setText(R.string.profile_login_for_content);
+            stateView.setVisibility(View.VISIBLE);
+        } else if (Boolean.TRUE.equals(publishedContentViewModel.getLoading().getValue())
+                && adapter.getItemCount() == 0) {
+            stateView.setText(R.string.content_loading);
+            stateView.setVisibility(View.VISIBLE);
+        } else if (adapter.getItemCount() == 0
+                && (publishedContentViewModel.getErrorMessage().getValue() == null
+                || publishedContentViewModel.getErrorMessage().getValue().trim().isEmpty())) {
+            stateView.setText(R.string.profile_content_empty);
+            stateView.setVisibility(View.VISIBLE);
+        } else if (adapter.getItemCount() > 0) {
+            stateView.setVisibility(View.GONE);
+        }
+    }
+
     private void showLoginDialog() {
-        LinearLayout form = form();
+        LinearLayout form = new LinearLayout(requireContext());
+        form.setOrientation(LinearLayout.VERTICAL);
+        int padding = (int) (24 * getResources().getDisplayMetrics().density);
+        form.setPadding(padding, padding, padding, 0);
         EditText username = field(R.string.profile_username_hint, InputType.TYPE_CLASS_TEXT);
         EditText password = field(R.string.profile_password_hint,
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
@@ -107,125 +198,13 @@ public final class NotificationsFragment extends Fragment {
                 .setView(form)
                 .setNegativeButton(android.R.string.cancel, null)
                 .setPositiveButton(R.string.profile_login, (dialog, which) -> {
-                    if (isEmpty(username) || isEmpty(password)) {
+                    if (value(username).isEmpty() || value(password).isEmpty()) {
                         showMessage(getString(R.string.form_required));
                         return;
                     }
                     accountViewModel.login(value(username), value(password));
                 })
                 .show();
-    }
-
-    private void showRegisterDialog() {
-        LinearLayout form = form();
-        EditText username = field(R.string.profile_username_hint, InputType.TYPE_CLASS_TEXT);
-        EditText nickname = field(R.string.profile_nickname_hint, InputType.TYPE_CLASS_TEXT);
-        EditText email = field(R.string.profile_email_hint,
-                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
-        EditText code = field(R.string.profile_code_hint, InputType.TYPE_CLASS_NUMBER);
-        EditText password = field(R.string.profile_password_hint,
-                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        EditText confirm = field(R.string.profile_confirm_password_hint,
-                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        form.addView(username);
-        form.addView(nickname);
-        form.addView(email);
-        form.addView(code);
-        form.addView(password);
-        form.addView(confirm);
-        AlertDialog dialog = new AlertDialog.Builder(requireContext())
-                .setTitle(R.string.profile_register_title)
-                .setMessage(R.string.profile_registration_hint)
-                .setView(form)
-                .setNeutralButton(R.string.profile_request_code, null)
-                .setNegativeButton(android.R.string.cancel, null)
-                .setPositiveButton(R.string.profile_register, null)
-                .create();
-        dialog.setOnShowListener(ignored -> {
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(button -> {
-                if (!validEmail(email)) {
-                    showMessage(getString(R.string.form_email_required));
-                    return;
-                }
-                accountViewModel.requestRegistrationCode(value(email));
-                startCodeCooldown(dialog);
-            });
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button -> {
-                if (isEmpty(username) || !validEmail(email) || isEmpty(code)
-                        || isEmpty(password) || !value(password).equals(value(confirm))) {
-                    showMessage(getString(R.string.form_invalid_registration));
-                    return;
-                }
-                dialog.dismiss();
-                accountViewModel.register(value(username), value(nickname), value(email),
-                        value(code), value(password), value(confirm));
-            });
-        });
-        dialog.show();
-    }
-
-    private void showPasswordDialog() {
-        LinearLayout form = form();
-        EditText email = field(R.string.profile_email_hint,
-                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
-        EditText code = field(R.string.profile_code_hint, InputType.TYPE_CLASS_NUMBER);
-        EditText password = field(R.string.profile_password_hint,
-                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        EditText confirm = field(R.string.profile_confirm_password_hint,
-                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        form.addView(email);
-        form.addView(code);
-        form.addView(password);
-        form.addView(confirm);
-        AlertDialog dialog = new AlertDialog.Builder(requireContext())
-                .setTitle(R.string.profile_password_title)
-                .setMessage(R.string.profile_password_reset_hint)
-                .setView(form)
-                .setNeutralButton(R.string.profile_request_code, null)
-                .setNegativeButton(android.R.string.cancel, null)
-                .setPositiveButton(R.string.profile_change_password, null)
-                .create();
-        dialog.setOnShowListener(ignored -> {
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(button -> {
-                if (!validEmail(email)) {
-                    showMessage(getString(R.string.form_email_required));
-                    return;
-                }
-                accountViewModel.requestPasswordResetCode(value(email));
-                startCodeCooldown(dialog);
-            });
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button -> {
-                if (!validEmail(email) || isEmpty(code) || isEmpty(password)
-                        || !value(password).equals(value(confirm))) {
-                    showMessage(getString(R.string.form_invalid_password));
-                    return;
-                }
-                dialog.dismiss();
-                accountViewModel.resetPassword(value(email), value(code),
-                        value(password), value(confirm));
-            });
-        });
-        dialog.show();
-    }
-
-    private void openMyContent() {
-        Integer userId = accountViewModel.getCurrentUserId();
-        if (userId == null) {
-            showMessage(getString(R.string.profile_login_required_action));
-            return;
-        }
-        Bundle arguments = new Bundle();
-        arguments.putInt(MyContentFragment.ARG_USER_ID, userId);
-        Navigation.findNavController(requireView())
-                .navigate(R.id.action_profile_to_my_content, arguments);
-    }
-
-    private LinearLayout form() {
-        LinearLayout layout = new LinearLayout(requireContext());
-        layout.setOrientation(LinearLayout.VERTICAL);
-        int padding = (int) (24 * getResources().getDisplayMetrics().density);
-        layout.setPadding(padding, padding, padding, 0);
-        return layout;
     }
 
     private EditText field(int hint, int inputType) {
@@ -236,46 +215,16 @@ public final class NotificationsFragment extends Fragment {
         return editText;
     }
 
-    private void startCodeCooldown(AlertDialog dialog) {
-        if (codeCountdown != null) {
-            codeCountdown.cancel();
-        }
-        android.widget.Button button = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
-        button.setEnabled(false);
-        codeCountdown = new CountDownTimer(60000, 1000) {
-            @Override
-            public void onTick(long millisUntilFinished) {
-                button.setText(getString(R.string.profile_request_code_countdown,
-                        (int) Math.ceil(millisUntilFinished / 1000.0)));
-            }
-
-            @Override
-            public void onFinish() {
-                button.setText(R.string.profile_request_code);
-                button.setEnabled(true);
-                codeCountdown = null;
-            }
-        }.start();
-    }
-
-    @Override
-    public void onDestroyView() {
-        if (codeCountdown != null) {
-            codeCountdown.cancel();
-            codeCountdown = null;
-        }
-        super.onDestroyView();
-    }
-
-    private boolean validEmail(EditText field) {
-        return android.util.Patterns.EMAIL_ADDRESS.matcher(value(field)).matches();
-    }
-
-    private static boolean isEmpty(EditText field) {
-        return value(field).trim().isEmpty();
-    }
-
     private static String value(EditText field) {
         return field.getText() == null ? "" : field.getText().toString().trim();
     }
+
+    private void openDetail(ContentItem item) {
+        Bundle arguments = new Bundle();
+        arguments.putString(ContentDetailFragment.ARG_CONTENT_TYPE, item.getType());
+        arguments.putInt(ContentDetailFragment.ARG_CONTENT_ID, item.getId());
+        Navigation.findNavController(requireView())
+                .navigate(R.id.action_profile_to_content_detail, arguments);
+    }
+
 }

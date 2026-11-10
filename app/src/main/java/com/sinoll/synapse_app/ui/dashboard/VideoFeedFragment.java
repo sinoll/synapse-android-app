@@ -41,11 +41,24 @@ public final class VideoFeedFragment extends Fragment {
         state = view.findViewById(R.id.video_feed_state);
         viewModel = new ViewModelProvider(this).get(ContentListViewModel.class);
         adapter = new VideoPagerAdapter();
+        adapter.setFullscreenListener(fullscreen -> {
+            if (getActivity() instanceof com.sinoll.synapse_app.MainActivity) {
+                ((com.sinoll.synapse_app.MainActivity) getActivity()).setVideoFullscreen(fullscreen);
+            }
+        });
         pager.setOrientation(ViewPager2.ORIENTATION_VERTICAL);
         pager.setAdapter(adapter);
         pager.registerOnPageChangeCallback(new ViewPager2.OnPageChangeCallback() {
             @Override
             public void onPageSelected(int position) {
+                if (adapter.isVertical(position)
+                        && requireActivity() instanceof com.sinoll.synapse_app.MainActivity
+                        && ((com.sinoll.synapse_app.MainActivity) requireActivity())
+                        .isVideoFullscreen()) {
+                    ((com.sinoll.synapse_app.MainActivity) requireActivity())
+                            .setVideoFullscreen(false);
+                    adapter.setFullscreenMode(false);
+                }
                 adapter.activate(position);
                 if (position >= adapter.getItemCount() - 2) {
                     viewModel.loadNextPage();
@@ -105,7 +118,20 @@ public final class VideoFeedFragment extends Fragment {
     public void onResume() {
         super.onResume();
         if (adapter != null) {
+            if (requireActivity() instanceof com.sinoll.synapse_app.MainActivity) {
+                adapter.setFullscreenMode(((com.sinoll.synapse_app.MainActivity) requireActivity())
+                        .isVideoFullscreen());
+            }
             adapter.activate(pager.getCurrentItem());
+        }
+    }
+
+    @Override
+    public void onConfigurationChanged(@NonNull android.content.res.Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (adapter != null && requireActivity() instanceof com.sinoll.synapse_app.MainActivity) {
+            adapter.setFullscreenMode(((com.sinoll.synapse_app.MainActivity) requireActivity())
+                    .isVideoFullscreen());
         }
     }
 }

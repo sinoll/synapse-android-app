@@ -34,136 +34,16 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/content_heading" />
 
-    <LinearLayout
+    <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/content_category_cards"
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
+        android:layout_height="78dp"
         android:layout_marginTop="16dp"
-        android:layout_marginEnd="16dp"
-        android:orientation="horizontal"
+        android:clipToPadding="false"
+        android:overScrollMode="never"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/content_subheading">
-
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/content_category_blog"
-            style="@style/Widget.Synapse.CategoryCard"
-            android:layout_width="0dp"
-            android:layout_height="86dp"
-            android:layout_marginEnd="6dp"
-            android:layout_weight="1">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/content_category_blog_icon"
-                    style="@style/Widget.Synapse.CategoryIcon"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="文" />
-
-                <TextView
-                    style="@style/Widget.Synapse.CategoryLabel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/content_type_blog" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/content_category_moment"
-            style="@style/Widget.Synapse.CategoryCard"
-            android:layout_width="0dp"
-            android:layout_height="86dp"
-            android:layout_marginStart="6dp"
-            android:layout_marginEnd="6dp"
-            android:layout_weight="1">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/content_category_moment_icon"
-                    style="@style/Widget.Synapse.CategoryIcon"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="动" />
-
-                <TextView
-                    style="@style/Widget.Synapse.CategoryLabel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/content_type_moment" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/content_category_images"
-            style="@style/Widget.Synapse.CategoryCard"
-            android:layout_width="0dp"
-            android:layout_height="86dp"
-            android:layout_marginStart="6dp"
-            android:layout_marginEnd="6dp"
-            android:layout_weight="1">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/content_category_images_icon"
-                    style="@style/Widget.Synapse.CategoryIcon"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="集" />
-
-                <TextView
-                    style="@style/Widget.Synapse.CategoryLabel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/content_type_images" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/content_category_video"
-            style="@style/Widget.Synapse.CategoryCard"
-            android:layout_width="0dp"
-            android:layout_height="86dp"
-            android:layout_marginStart="6dp"
-            android:layout_weight="1">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/content_category_video_icon"
-                    style="@style/Widget.Synapse.CategoryIcon"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="影" />
-
-                <TextView
-                    style="@style/Widget.Synapse.CategoryLabel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/title_dashboard" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-    </LinearLayout>
+        app:layout_constraintTop_toBottomOf="@id/content_subheading" />
 
     <LinearLayout
         android:id="@+id/content_search_row"

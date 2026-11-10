@@ -44,10 +44,8 @@ final class ContentListAdapter extends RecyclerView.Adapter<ContentListAdapter.C
     public void onBindViewHolder(@NonNull ContentViewHolder holder, int position) {
         ContentItem item = items.get(position);
         if (item.getCoverUrl().isEmpty()) {
-            holder.cover.setVisibility(View.GONE);
             imageLoader.clear(holder.cover);
         } else {
-            holder.cover.setVisibility(View.VISIBLE);
             imageLoader.load(item.getCoverUrl(), holder.cover);
         }
         holder.title.setText(item.getTitle().isEmpty()
@@ -93,7 +91,8 @@ final class ContentListAdapter extends RecyclerView.Adapter<ContentListAdapter.C
 
     private static String firstNonEmpty(String... values) {
         for (String value : values) {
-            if (value != null && !value.trim().isEmpty()) {
+            if (value != null && !value.trim().isEmpty()
+                    && !"null".equalsIgnoreCase(value.trim())) {
                 return value;
             }
         }

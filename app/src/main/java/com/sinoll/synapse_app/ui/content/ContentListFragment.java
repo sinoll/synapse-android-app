@@ -12,19 +12,23 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.Navigation;
 import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.PagerSnapHelper;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
-import com.google.android.material.card.MaterialCardView;
 
 import com.google.android.material.snackbar.Snackbar;
 import com.sinoll.synapse_app.R;
 import com.sinoll.synapse_app.data.model.ContentItem;
 import com.sinoll.synapse_app.data.model.ContentType;
 import com.sinoll.synapse_app.ui.profile.MyContentFragment;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public abstract class ContentListFragment extends Fragment {
 
@@ -35,13 +39,19 @@ public abstract class ContentListFragment extends Fragment {
     private EditText searchInput;
     private EditText tagInput;
     private RecyclerView recyclerView;
-    private final java.util.Map<Integer, MaterialCardView> categoryCards =
-            new java.util.LinkedHashMap<>();
+    private RecyclerView categoryRecycler;
+    private ContentCategoryAdapter categoryAdapter;
+    private PagerSnapHelper categorySnapHelper;
+    private ContentType selectedCategoryType;
 
     protected abstract ContentType initialContentType();
 
     protected boolean showsTypeSelector() {
         return false;
+    }
+
+    protected boolean showsIntroHeader() {
+        return true;
     }
 
     protected boolean isOwnerContent() {
@@ -78,23 +88,21 @@ public abstract class ContentListFragment extends Fragment {
             }
             return false;
         });
+        if (!showsIntroHeader()) {
+            view.findViewById(R.id.content_heading).setVisibility(View.GONE);
+            view.findViewById(R.id.content_subheading).setVisibility(View.GONE);
+            ConstraintLayout.LayoutParams categoryParams =
+                    (ConstraintLayout.LayoutParams) view.findViewById(
+                            R.id.content_category_cards).getLayoutParams();
+            categoryParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID;
+            categoryParams.topToBottom = ConstraintLayout.LayoutParams.UNSET;
+            categoryParams.topMargin = dp(12);
+            view.findViewById(R.id.content_category_cards).setLayoutParams(categoryParams);
+        }
         if (!showsTypeSelector()) {
             view.findViewById(R.id.content_category_cards).setVisibility(View.GONE);
         } else {
-            addCategory(view, R.id.content_category_blog, R.id.content_category_blog_icon,
-                    ContentType.BLOG, "文");
-            addCategory(view, R.id.content_category_moment, R.id.content_category_moment_icon,
-                    ContentType.MOMENT, "动");
-            addCategory(view, R.id.content_category_images, R.id.content_category_images_icon,
-                    ContentType.IMAGE_GALLERY, "集");
-            View videoCard = view.findViewById(R.id.content_category_video);
-            if (isOwnerContent()) {
-                addCategory(view, R.id.content_category_video, R.id.content_category_video_icon,
-                        ContentType.SHORT_VIDEO, "影");
-            } else {
-                videoCard.setVisibility(View.GONE);
-            }
-            selectCategory(initialContentType());
+            setupCategories(view);
         }
         recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
@@ -178,33 +186,70 @@ public abstract class ContentListFragment extends Fragment {
         Navigation.findNavController(requireView()).navigate(action, arguments);
     }
 
-    private void addCategory(View root, int cardId, int iconId, ContentType type, String icon) {
-        MaterialCardView card = root.findViewById(cardId);
-        categoryCards.put(cardId, card);
-        TextView iconView = root.findViewById(iconId);
-        iconView.setText(icon);
-        card.setOnClickListener(ignored -> {
-            selectCategory(type);
-            searchInput.setText("");
-            tagInput.setText("");
-            viewModel.setContentType(type);
+    private void setupCategories(View root) {
+        categoryRecycler = root.findViewById(R.id.content_category_cards);
+        List<ContentCategoryAdapter.Category> categories = new ArrayList<>();
+        categories.add(new ContentCategoryAdapter.Category(ContentType.BLOG,
+                getString(R.string.content_type_blog), "文"));
+        categories.add(new ContentCategoryAdapter.Category(ContentType.MOMENT,
+                getString(R.string.content_type_moment), "动"));
+        categories.add(new ContentCategoryAdapter.Category(ContentType.IMAGE_GALLERY,
+                getString(R.string.content_type_images), "集"));
+        if (isOwnerContent()) {
+            categories.add(new ContentCategoryAdapter.Category(ContentType.SHORT_VIDEO,
+                    getString(R.string.title_dashboard), "影"));
+        }
+
+        LinearLayoutManager layoutManager = new LinearLayoutManager(
+                requireContext(), RecyclerView.HORIZONTAL, false);
+        categoryRecycler.setLayoutManager(layoutManager);
+        categoryAdapter = new ContentCategoryAdapter(categories, position -> {
+            updateSelectedCategory(position);
+            categoryRecycler.smoothScrollToPosition(position);
+        });
+        categoryRecycler.setAdapter(categoryAdapter);
+        categorySnapHelper = new PagerSnapHelper();
+        categorySnapHelper.attachToRecyclerView(categoryRecycler);
+
+        int sidePadding = Math.max(0,
+                (getResources().getDisplayMetrics().widthPixels - dp(196)) / 2);
+        categoryRecycler.setPadding(sidePadding, 0, sidePadding, 0);
+
+        int initialPosition = 0;
+        for (int position = 0; position < categories.size(); position++) {
+            if (categories.get(position).type == initialContentType()) {
+                initialPosition = position;
+                break;
+            }
+        }
+        selectedCategoryType = initialContentType();
+        categoryAdapter.setSelectedPosition(initialPosition);
+        categoryRecycler.scrollToPosition(initialPosition);
+        categoryRecycler.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
+                if (newState != RecyclerView.SCROLL_STATE_IDLE) {
+                    return;
+                }
+                View snappedView = categorySnapHelper.findSnapView(layoutManager);
+                if (snappedView != null) {
+                    int position = layoutManager.getPosition(snappedView);
+                    updateSelectedCategory(position);
+                }
+            }
         });
     }
 
-    private void selectCategory(ContentType type) {
-        int selectedId = type == ContentType.BLOG ? R.id.content_category_blog
-                : type == ContentType.MOMENT ? R.id.content_category_moment
-                : type == ContentType.IMAGE_GALLERY ? R.id.content_category_images
-                : R.id.content_category_video;
-        for (java.util.Map.Entry<Integer, MaterialCardView> entry : categoryCards.entrySet()) {
-            boolean selected = entry.getKey() == selectedId;
-            MaterialCardView card = entry.getValue();
-            card.setStrokeWidth(selected ? dp(2) : dp(1));
-            card.setStrokeColor(requireContext().getColor(selected
-                    ? R.color.brand_primary : R.color.card_stroke));
-            card.setCardBackgroundColor(requireContext().getColor(selected
-                    ? R.color.card_selected : R.color.white));
+    private void updateSelectedCategory(int position) {
+        ContentCategoryAdapter.Category category = categoryAdapter.getCategory(position);
+        categoryAdapter.setSelectedPosition(position);
+        if (selectedCategoryType == category.type) {
+            return;
         }
+        selectedCategoryType = category.type;
+        searchInput.setText("");
+        tagInput.setText("");
+        viewModel.setContentType(category.type);
     }
 
     private int dp(int value) {

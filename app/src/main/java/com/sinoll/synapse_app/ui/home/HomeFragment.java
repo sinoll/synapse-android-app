@@ -14,4 +14,9 @@ public final class HomeFragment extends ContentListFragment {
     protected boolean showsTypeSelector() {
         return true;
     }
+
+    @Override
+    protected boolean showsIntroHeader() {
+        return false;
+    }
 }

@@ -7,6 +7,7 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 public final class ContentItem {
 
@@ -21,6 +22,7 @@ public final class ContentItem {
     private final String authorName;
     private final String coverUrl;
     private final String videoUrl;
+    private final boolean verticalVideo;
     private final String createdAt;
     private final String summary;
     private final String text;
@@ -40,10 +42,12 @@ public final class ContentItem {
         JSONObject author = json.optJSONObject("author");
         authorName = author == null ? "" : author.optString("nickname",
                 author.optString("username", ""));
-        coverUrl = firstNonEmpty(json.optString("cover_url", ""),
-                json.optString("thumb_url", ""), firstGalleryImage(json.optJSONArray("images")));
+        coverUrl = resolveCoverUrl(json, type);
         videoUrl = firstNonEmpty(json.optString("video_url", ""),
                 json.optString("url", ""));
+        verticalVideo = json.has("is_vertical")
+                ? json.optBoolean("is_vertical", true)
+                : json.optInt("video_type", 2) != 1;
         createdAt = json.optString("created_at", "");
         summary = json.optString("summary", "");
         text = json.optString("text", "");
@@ -102,6 +106,10 @@ public final class ContentItem {
         return videoUrl;
     }
 
+    public boolean isVerticalVideo() {
+        return verticalVideo;
+    }
+
     public String getCreatedAt() {
         return createdAt;
     }
@@ -149,11 +157,46 @@ public final class ContentItem {
 
     private static String firstNonEmpty(String... values) {
         for (String value : values) {
-            if (value != null && !value.isEmpty()) {
-                return value;
+            if (value != null && !value.trim().isEmpty()
+                    && !"null".equalsIgnoreCase(value.trim())) {
+                return value.trim();
             }
         }
         return "";
+    }
+
+    private static String resolveCoverUrl(JSONObject json, String type) {
+        String galleryImage = firstGalleryImage(json.optJSONArray("images"));
+        if ("short_video".equals(type)) {
+            return firstNonEmpty(json.optString("cover_url", ""),
+                    json.optString("cover_path", ""), galleryImage);
+        }
+
+        String thumbnail = firstNonDefaultCover(
+                json.optString("thumb_url", ""), json.optString("thumb", ""));
+        if (!thumbnail.isEmpty()) {
+            return thumbnail;
+        }
+        thumbnail = firstNonDefaultCover(galleryImage);
+        if (!thumbnail.isEmpty()) {
+            return thumbnail;
+        }
+        return firstNonDefaultCover(json.optString("cover_url", ""));
+    }
+
+    private static String firstNonDefaultCover(String... values) {
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()
+                    && !"null".equalsIgnoreCase(value.trim())
+                    && !isDefaultCover(value.trim())) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
+    private static boolean isDefaultCover(String value) {
+        return value.toLowerCase(Locale.ROOT).contains("/images/default-cover.png");
     }
 
     private static String firstGalleryImage(JSONArray images) {

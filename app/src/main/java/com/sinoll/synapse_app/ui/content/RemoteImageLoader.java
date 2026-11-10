@@ -17,17 +17,27 @@ import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-final class RemoteImageLoader {
+public final class RemoteImageLoader {
 
     private static final int MAX_IMAGE_BYTES = 8 * 1024 * 1024;
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(3);
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final ApiClient API_CLIENT = ApiClient.forApplication();
 
-    void load(String url, ImageView imageView) {
+    public void load(String url, ImageView imageView) {
+        load(url, imageView, 0);
+    }
+
+    public void load(String url, ImageView imageView, int fallbackResource) {
         String resolved = API_CLIENT.resolveMediaUrl(url);
         imageView.setTag(R.id.remote_image_url, resolved);
-        imageView.setImageResource(R.drawable.image_placeholder);
+        if (fallbackResource != 0) {
+            imageView.setImageResource(fallbackResource);
+            imageView.setVisibility(ImageView.VISIBLE);
+        } else {
+            imageView.setVisibility(ImageView.GONE);
+            imageView.setImageDrawable(null);
+        }
         if (resolved == null) {
             return;
         }
@@ -44,8 +54,13 @@ final class RemoteImageLoader {
                 if (resolved.equals(imageView.getTag(R.id.remote_image_url))) {
                     if (result != null) {
                         imageView.setImageBitmap(result);
+                        imageView.setVisibility(ImageView.VISIBLE);
+                    } else if (fallbackResource != 0) {
+                        imageView.setImageResource(fallbackResource);
+                        imageView.setVisibility(ImageView.VISIBLE);
                     } else {
-                        imageView.setImageResource(R.drawable.image_placeholder);
+                        imageView.setImageDrawable(null);
+                        imageView.setVisibility(ImageView.GONE);
                     }
                 }
             });
@@ -54,7 +69,8 @@ final class RemoteImageLoader {
 
     void clear(ImageView imageView) {
         imageView.setTag(R.id.remote_image_url, null);
-        imageView.setImageResource(R.drawable.image_placeholder);
+        imageView.setImageDrawable(null);
+        imageView.setVisibility(ImageView.GONE);
     }
 
     private static Bitmap download(String url, int width, int height) throws IOException {

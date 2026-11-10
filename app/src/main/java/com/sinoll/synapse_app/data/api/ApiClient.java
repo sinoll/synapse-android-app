@@ -94,7 +94,25 @@ public final class ApiClient {
         try {
             URI base = new URI(baseUrl);
             URI media = new URI(value.trim());
-            URI resolved = media.isAbsolute() ? media : base.resolve(media);
+            URI resolved;
+            if (media.isAbsolute()
+                    && allowsDevelopmentHttp
+                    && "http".equalsIgnoreCase(base.getScheme())
+                    && "http".equalsIgnoreCase(media.getScheme())) {
+                if (media.getUserInfo() != null || media.getFragment() != null) {
+                    return null;
+                }
+                String mediaPath = media.getRawPath();
+                if (mediaPath == null || mediaPath.isEmpty()) {
+                    mediaPath = "/";
+                }
+                String mediaQuery = media.getRawQuery() == null
+                        ? "" : "?" + media.getRawQuery();
+                resolved = new URI(base.getScheme() + "://" + base.getRawAuthority()
+                        + mediaPath + mediaQuery);
+            } else {
+                resolved = media.isAbsolute() ? media : base.resolve(media);
+            }
             boolean isHttps = "https".equalsIgnoreCase(resolved.getScheme());
             boolean isAllowedDevelopmentHttp = allowsDevelopmentHttp
                     && "http".equalsIgnoreCase(resolved.getScheme())

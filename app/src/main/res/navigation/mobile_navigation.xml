@@ -29,6 +29,9 @@
         <action
             android:id="@+id/action_profile_to_my_content"
             app:destination="@id/my_content" />
+        <action
+            android:id="@+id/action_profile_to_content_detail"
+            app:destination="@id/content_detail" />
     </fragment>
 
     <fragment
