@@ -18,7 +18,7 @@ public final class ApiClient {
     private static final int CONNECT_TIMEOUT_MILLIS = 15000;
     private static final int READ_TIMEOUT_MILLIS = 30000;
     private static final int MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
-    private static final String DEVELOPMENT_HTTP_HOST = "192.168.10.10";
+    private static final String DEVELOPMENT_HTTP_HOST = "192.168.8.10";
 
     private final String baseUrl;
     private final boolean allowsDevelopmentHttp;

@@ -1,5 +1,6 @@
 package com.sinoll.synapse_app.ui.profile;
 
+import com.sinoll.synapse_app.R;
 import com.sinoll.synapse_app.data.model.ContentType;
 import com.sinoll.synapse_app.ui.content.ContentListFragment;
 
@@ -13,12 +14,17 @@ public final class MyContentFragment extends ContentListFragment {
     }
 
     @Override
-    protected boolean showsTypeSelector() {
+    protected boolean isOwnerContent() {
         return true;
     }
 
     @Override
-    protected boolean isOwnerContent() {
-        return true;
+    protected int contentHeadingResource() {
+        return R.string.profile_my_content_title;
+    }
+
+    @Override
+    protected int contentSubheadingResource() {
+        return R.string.profile_my_content_subtitle;
     }
 }

@@ -12,12 +12,10 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.Navigation;
 import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.PagerSnapHelper;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
@@ -27,9 +25,6 @@ import com.sinoll.synapse_app.data.model.ContentItem;
 import com.sinoll.synapse_app.data.model.ContentType;
 import com.sinoll.synapse_app.ui.profile.MyContentFragment;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public abstract class ContentListFragment extends Fragment {
 
     private ContentListViewModel viewModel;
@@ -37,17 +32,15 @@ public abstract class ContentListFragment extends Fragment {
     private SwipeRefreshLayout refreshLayout;
     private TextView stateText;
     private EditText searchInput;
-    private EditText tagInput;
     private RecyclerView recyclerView;
-    private RecyclerView categoryRecycler;
-    private ContentCategoryAdapter categoryAdapter;
-    private PagerSnapHelper categorySnapHelper;
-    private ContentType selectedCategoryType;
 
     protected abstract ContentType initialContentType();
 
-    protected boolean showsTypeSelector() {
-        return false;
+    protected int contentHeadingResource() {
+        return R.string.content_heading;
+    }
+    protected int contentSubheadingResource() {
+        return R.string.content_subheading;
     }
 
     protected boolean showsIntroHeader() {
@@ -72,8 +65,15 @@ public abstract class ContentListFragment extends Fragment {
         refreshLayout = view.findViewById(R.id.content_refresh);
         stateText = view.findViewById(R.id.content_state);
         searchInput = view.findViewById(R.id.content_search);
-        tagInput = view.findViewById(R.id.content_tag);
         recyclerView = view.findViewById(R.id.content_list);
+        TextView heading = view.findViewById(R.id.content_heading);
+        TextView subheading = view.findViewById(R.id.content_subheading);
+        heading.setText(contentHeadingResource());
+        subheading.setText(contentSubheadingResource());
+        if (!showsIntroHeader()) {
+            heading.setVisibility(View.GONE);
+            subheading.setVisibility(View.GONE);
+        }
         Button searchButton = view.findViewById(R.id.content_search_button);
         adapter = new ContentListAdapter(this::openDetail);
         recyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
@@ -88,22 +88,6 @@ public abstract class ContentListFragment extends Fragment {
             }
             return false;
         });
-        if (!showsIntroHeader()) {
-            view.findViewById(R.id.content_heading).setVisibility(View.GONE);
-            view.findViewById(R.id.content_subheading).setVisibility(View.GONE);
-            ConstraintLayout.LayoutParams categoryParams =
-                    (ConstraintLayout.LayoutParams) view.findViewById(
-                            R.id.content_category_cards).getLayoutParams();
-            categoryParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID;
-            categoryParams.topToBottom = ConstraintLayout.LayoutParams.UNSET;
-            categoryParams.topMargin = dp(12);
-            view.findViewById(R.id.content_category_cards).setLayoutParams(categoryParams);
-        }
-        if (!showsTypeSelector()) {
-            view.findViewById(R.id.content_category_cards).setVisibility(View.GONE);
-        } else {
-            setupCategories(view);
-        }
         recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView list, int dx, int dy) {
@@ -136,7 +120,7 @@ public abstract class ContentListFragment extends Fragment {
     }
 
     private void searchContent() {
-        viewModel.loadFirstPage(searchInput.getText().toString(), tagInput.getText().toString());
+        viewModel.loadFirstPage(searchInput.getText().toString());
     }
 
     private void observeViewModel(View root) {
@@ -182,77 +166,8 @@ public abstract class ContentListFragment extends Fragment {
         arguments.putInt(ContentDetailFragment.ARG_CONTENT_ID, item.getId());
         int action = isOwnerContent()
                 ? R.id.action_my_content_to_content_detail
-                : R.id.action_home_to_content_detail;
+                : R.id.action_global_content_detail;
         Navigation.findNavController(requireView()).navigate(action, arguments);
     }
 
-    private void setupCategories(View root) {
-        categoryRecycler = root.findViewById(R.id.content_category_cards);
-        List<ContentCategoryAdapter.Category> categories = new ArrayList<>();
-        categories.add(new ContentCategoryAdapter.Category(ContentType.BLOG,
-                getString(R.string.content_type_blog), "文"));
-        categories.add(new ContentCategoryAdapter.Category(ContentType.MOMENT,
-                getString(R.string.content_type_moment), "动"));
-        categories.add(new ContentCategoryAdapter.Category(ContentType.IMAGE_GALLERY,
-                getString(R.string.content_type_images), "集"));
-        if (isOwnerContent()) {
-            categories.add(new ContentCategoryAdapter.Category(ContentType.SHORT_VIDEO,
-                    getString(R.string.title_dashboard), "影"));
-        }
-
-        LinearLayoutManager layoutManager = new LinearLayoutManager(
-                requireContext(), RecyclerView.HORIZONTAL, false);
-        categoryRecycler.setLayoutManager(layoutManager);
-        categoryAdapter = new ContentCategoryAdapter(categories, position -> {
-            updateSelectedCategory(position);
-            categoryRecycler.smoothScrollToPosition(position);
-        });
-        categoryRecycler.setAdapter(categoryAdapter);
-        categorySnapHelper = new PagerSnapHelper();
-        categorySnapHelper.attachToRecyclerView(categoryRecycler);
-
-        int sidePadding = Math.max(0,
-                (getResources().getDisplayMetrics().widthPixels - dp(196)) / 2);
-        categoryRecycler.setPadding(sidePadding, 0, sidePadding, 0);
-
-        int initialPosition = 0;
-        for (int position = 0; position < categories.size(); position++) {
-            if (categories.get(position).type == initialContentType()) {
-                initialPosition = position;
-                break;
-            }
-        }
-        selectedCategoryType = initialContentType();
-        categoryAdapter.setSelectedPosition(initialPosition);
-        categoryRecycler.scrollToPosition(initialPosition);
-        categoryRecycler.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override
-            public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
-                if (newState != RecyclerView.SCROLL_STATE_IDLE) {
-                    return;
-                }
-                View snappedView = categorySnapHelper.findSnapView(layoutManager);
-                if (snappedView != null) {
-                    int position = layoutManager.getPosition(snappedView);
-                    updateSelectedCategory(position);
-                }
-            }
-        });
-    }
-
-    private void updateSelectedCategory(int position) {
-        ContentCategoryAdapter.Category category = categoryAdapter.getCategory(position);
-        categoryAdapter.setSelectedPosition(position);
-        if (selectedCategoryType == category.type) {
-            return;
-        }
-        selectedCategoryType = category.type;
-        searchInput.setText("");
-        tagInput.setText("");
-        viewModel.setContentType(category.type);
-    }
-
-    private int dp(int value) {
-        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
-    }
 }

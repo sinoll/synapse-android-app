@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 
+import com.sinoll.synapse_app.R;
 import com.sinoll.synapse_app.data.api.ApiClient;
 import com.sinoll.synapse_app.data.api.ApiException;
 import com.sinoll.synapse_app.data.repository.AccountRepository;
@@ -15,6 +16,7 @@ import com.sinoll.synapse_app.data.session.SessionStore;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.Future;
 
 public final class AccountViewModel extends AndroidViewModel {
@@ -24,6 +26,7 @@ public final class AccountViewModel extends AndroidViewModel {
     private final MutableLiveData<JSONObject> user = new MutableLiveData<>();
     private final MutableLiveData<String> message = new MutableLiveData<>();
     private final MutableLiveData<Boolean> loading = new MutableLiveData<>(false);
+    private final MutableLiveData<Boolean> registrationCompleted = new MutableLiveData<>(false);
     private Future<?> activeRequest;
     private volatile int generation;
 
@@ -43,6 +46,10 @@ public final class AccountViewModel extends AndroidViewModel {
 
     public LiveData<Boolean> getLoading() {
         return loading;
+    }
+
+    public LiveData<Boolean> getRegistrationCompleted() {
+        return registrationCompleted;
     }
 
     public void refreshSession() {
@@ -80,33 +87,67 @@ public final class AccountViewModel extends AndroidViewModel {
     public void login(String username, String password) {
         int requestGeneration = beginRequest();
         activeRequest = repository.login(username, password,
-                callback(requestGeneration, true));
+                callback(requestGeneration, true, "登录成功。"));
     }
 
     public void requestRegistrationCode(String email) {
         int requestGeneration = beginRequest();
         activeRequest = repository.requestRegistrationCode(email,
-                callback(requestGeneration, false));
+                callback(requestGeneration, false,
+                        getApplication().getString(R.string.profile_registration_code_sent)));
     }
 
     public void register(String username, String nickname, String email, String code,
                          String password, String confirmPassword) {
         int requestGeneration = beginRequest();
-        activeRequest = repository.register(username, nickname, email, code, password,
-                confirmPassword, callback(requestGeneration, false));
+        registrationCompleted.setValue(false);
+        AtomicBoolean accountCreated = new AtomicBoolean(false);
+        activeRequest = repository.registerAndLogin(username, nickname, email, code, password,
+                confirmPassword, () -> {
+                    if (requestGeneration == generation) {
+                        accountCreated.set(true);
+                        registrationCompleted.postValue(true);
+                        message.postValue(getApplication().getString(
+                                R.string.profile_registration_logging_in));
+                    }
+                }, new AccountRepository.Callback<JSONObject>() {
+                    @Override
+                    public void onSuccess(JSONObject result) {
+                        if (requestGeneration != generation) {
+                            return;
+                        }
+                        user.postValue(result);
+                        message.postValue(getApplication().getString(
+                                R.string.profile_registration_logged_in));
+                        loading.postValue(false);
+                    }
+
+                    @Override
+                    public void onError(Exception error) {
+                        if (requestGeneration != generation) {
+                            return;
+                        }
+                        String errorMessage = userMessage(error);
+                        message.postValue(accountCreated.get()
+                                ? getApplication().getString(
+                                        R.string.profile_registration_login_failed, errorMessage)
+                                : errorMessage);
+                        loading.postValue(false);
+                    }
+                });
     }
 
     public void requestPasswordResetCode(String email) {
         int requestGeneration = beginRequest();
         activeRequest = repository.requestPasswordResetCode(email,
-                callback(requestGeneration, false));
+                callback(requestGeneration, false, "验证码已发送，请查收邮件。"));
     }
 
     public void resetPassword(String email, String code, String password,
                               String confirmPassword) {
         int requestGeneration = beginRequest();
         activeRequest = repository.resetPassword(email, code, password, confirmPassword,
-                callback(requestGeneration, false));
+                callback(requestGeneration, false, "密码已重置，请重新登录。"));
     }
 
     public void logout() {
@@ -161,7 +202,8 @@ public final class AccountViewModel extends AndroidViewModel {
     }
 
     private AccountRepository.Callback<JSONObject> callback(int requestGeneration,
-                                                             boolean isLogin) {
+                                                             boolean isLogin,
+                                                             String successMessage) {
         return new AccountRepository.Callback<JSONObject>() {
             @Override
             public void onSuccess(JSONObject result) {
@@ -170,10 +212,8 @@ public final class AccountViewModel extends AndroidViewModel {
                 }
                 if (isLogin) {
                     user.postValue(result);
-                    message.postValue("登录成功。");
-                } else {
-                    message.postValue("操作成功，请按提示继续。");
                 }
+                message.postValue(successMessage);
                 loading.postValue(false);
             }
 

@@ -38,7 +38,7 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
 
     public void setFullscreenMode(boolean fullscreen) {
         fullscreenMode = fullscreen;
-        if (activeHolder != null && !activeHolder.verticalVideo) {
+        if (activeHolder != null) {
             activeHolder.setFullscreenMode(fullscreen);
         }
     }
@@ -198,8 +198,8 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
         private final Runnable hideVideoInfo;
         private final View.OnLayoutChangeListener videoLayoutListener =
                 (view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-                    if (!verticalVideo && videoWidth > 0) {
-                        layoutHorizontalVideo();
+                    if (videoWidth > 0) {
+                        layoutVideo();
                     }
                 };
 
@@ -236,7 +236,7 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
                 updateFullscreenButton();
                 updateVideoInfoLayout();
                 if (!verticalVideo && prepared) {
-                    layoutHorizontalVideo();
+                    layoutVideo();
                 }
                 if (video.isPlaying()) {
                     scheduleHideVideoInfo();
@@ -290,8 +290,8 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
                 videoWidth = mediaPlayer.getVideoWidth();
                 videoHeight = mediaPlayer.getVideoHeight();
                 mediaPlayer.setLooping(true);
-                if (!verticalVideo) {
-                    layoutHorizontalVideo();
+                if (verticalVideo || !fullscreenMode) {
+                    layoutVideo();
                 }
                 if (playPause.isSelected()) {
                     playIfReady();
@@ -418,17 +418,17 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
         }
 
         void setFullscreenMode(boolean fullscreen) {
-            fullscreenMode = fullscreen && !verticalVideo;
+            fullscreenMode = fullscreen;
             updateFullscreenButton();
             updateVideoInfoLayout();
             setVideoInfoVisible(true);
-            if (prepared && !verticalVideo) {
-                layoutHorizontalVideo();
+            if (prepared) {
+                layoutVideo();
             }
             scheduleHideVideoInfo();
         }
 
-        private void layoutHorizontalVideo() {
+        private void layoutVideo() {
             ViewGroup parent = (ViewGroup) video.getParent();
             int availableWidth = parent.getWidth();
             int availableHeight = parent.getHeight();
@@ -436,8 +436,11 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
                     || videoWidth <= 0 || videoHeight <= 0) {
                 return;
             }
-            float scale = Math.min((float) availableWidth / videoWidth,
-                    (float) availableHeight / videoHeight);
+            float scale = verticalVideo
+                    ? Math.max((float) availableWidth / videoWidth,
+                            (float) availableHeight / videoHeight)
+                    : Math.min((float) availableWidth / videoWidth,
+                            (float) availableHeight / videoHeight);
             int width = Math.round(videoWidth * scale);
             int height = Math.round(videoHeight * scale);
             ViewGroup.LayoutParams current = video.getLayoutParams();

@@ -2,12 +2,15 @@ package com.sinoll.synapse_app.ui.notifications;
 
 import android.app.AlertDialog;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.InputType;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -20,6 +23,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
+import com.google.android.material.button.MaterialButton;
 import com.google.android.material.snackbar.Snackbar;
 import com.sinoll.synapse_app.R;
 import com.sinoll.synapse_app.data.model.ContentItem;
@@ -37,12 +41,32 @@ public final class NotificationsFragment extends Fragment {
     private RemoteImageLoader avatarLoader;
     private android.widget.ImageView avatarView;
     private View loginButton;
+    private View registerButton;
     private View logoutButton;
     private TextView nameView;
     private TextView subtitleView;
     private TextView messageView;
     private TextView stateView;
     private SwipeRefreshLayout refreshLayout;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private MaterialButton registrationCodeButton;
+    private AlertDialog registrationDialog;
+    private TextView registrationErrorView;
+    private int registrationCodeCountdown;
+    private boolean registrationCodeRequestPending;
+    private final Runnable updateRegistrationCodeCountdown = new Runnable() {
+        @Override
+        public void run() {
+            if (registrationCodeCountdown <= 0 || registrationCodeButton == null) {
+                resetRegistrationCodeCountdown();
+                return;
+            }
+            registrationCodeButton.setText(getString(
+                    R.string.profile_request_code_countdown, registrationCodeCountdown));
+            registrationCodeCountdown--;
+            mainHandler.postDelayed(this, 1000);
+        }
+    };
 
     @Nullable
     @Override
@@ -68,6 +92,8 @@ public final class NotificationsFragment extends Fragment {
 
         loginButton = view.findViewById(R.id.profile_login);
         loginButton.setOnClickListener(ignored -> showLoginDialog());
+        registerButton = view.findViewById(R.id.profile_register);
+        registerButton.setOnClickListener(ignored -> showRegistrationDialog());
         logoutButton = view.findViewById(R.id.profile_logout);
         logoutButton.setOnClickListener(ignored -> accountViewModel.logout());
 
@@ -99,6 +125,11 @@ public final class NotificationsFragment extends Fragment {
 
         accountViewModel.getUser().observe(getViewLifecycleOwner(), this::showUser);
         accountViewModel.getMessage().observe(getViewLifecycleOwner(), this::showMessage);
+        accountViewModel.getRegistrationCompleted().observe(getViewLifecycleOwner(), completed -> {
+            if (Boolean.TRUE.equals(completed) && registrationDialog != null) {
+                registrationDialog.dismiss();
+            }
+        });
         publishedContentViewModel.getItems().observe(getViewLifecycleOwner(), items -> {
             adapter.submitItems(items);
             renderContentState();
@@ -131,6 +162,7 @@ public final class NotificationsFragment extends Fragment {
         String authorization = accountViewModel.getAuthorizationHeader();
         boolean loggedIn = account != null && userId > 0 && authorization != null;
         loginButton.setVisibility(loggedIn ? View.GONE : View.VISIBLE);
+        registerButton.setVisibility(loggedIn ? View.GONE : View.VISIBLE);
         logoutButton.setVisibility(loggedIn ? View.VISIBLE : View.GONE);
         if (!loggedIn) {
             nameView.setText(R.string.profile_welcome);
@@ -156,10 +188,23 @@ public final class NotificationsFragment extends Fragment {
     private void showMessage(@Nullable String message) {
         if (message == null || message.trim().isEmpty()) {
             messageView.setVisibility(View.GONE);
+            if (registrationErrorView != null) {
+                registrationErrorView.setVisibility(View.GONE);
+            }
             return;
+        }
+        if (registrationCodeRequestPending) {
+            registrationCodeRequestPending = false;
+            if (!getString(R.string.profile_registration_code_sent).equals(message)) {
+                resetRegistrationCodeCountdown();
+            }
         }
         messageView.setText(message);
         messageView.setVisibility(View.VISIBLE);
+        if (registrationDialog != null && registrationErrorView != null) {
+            registrationErrorView.setText(message);
+            registrationErrorView.setVisibility(View.VISIBLE);
+        }
     }
 
     private void renderContentState() {
@@ -207,6 +252,117 @@ public final class NotificationsFragment extends Fragment {
                 .show();
     }
 
+    private void showRegistrationDialog() {
+        int padding = (int) (24 * getResources().getDisplayMetrics().density);
+        LinearLayout form = new LinearLayout(requireContext());
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(padding, padding, padding, 0);
+
+        EditText username = field(R.string.profile_username_hint, InputType.TYPE_CLASS_TEXT);
+        EditText nickname = field(R.string.profile_nickname_hint, InputType.TYPE_CLASS_TEXT);
+        EditText email = field(R.string.profile_email_hint,
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        EditText code = field(R.string.profile_code_hint,
+                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_NORMAL);
+        EditText password = field(R.string.profile_password_hint,
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        EditText confirmPassword = field(R.string.profile_confirm_password_hint,
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+
+        form.addView(username);
+        form.addView(nickname);
+        form.addView(email);
+        LinearLayout codeRow = new LinearLayout(requireContext());
+        codeRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        codeRow.setOrientation(LinearLayout.HORIZONTAL);
+        codeRow.addView(code, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        MaterialButton sendCode = new MaterialButton(requireContext());
+        sendCode.setText(R.string.profile_request_code);
+        LinearLayout.LayoutParams codeButtonParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        codeButtonParams.setMarginStart((int) (8 * getResources().getDisplayMetrics().density));
+        codeRow.addView(sendCode, codeButtonParams);
+        form.addView(codeRow);
+        form.addView(password);
+        form.addView(confirmPassword);
+        registrationErrorView = new TextView(requireContext());
+        registrationErrorView.setTextColor(requireContext().getColor(R.color.brand_primary));
+        registrationErrorView.setTextSize(13);
+        registrationErrorView.setVisibility(View.GONE);
+        LinearLayout.LayoutParams errorParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        errorParams.topMargin = (int) (8 * getResources().getDisplayMetrics().density);
+        form.addView(registrationErrorView, errorParams);
+
+        ScrollView scrollView = new ScrollView(requireContext());
+        scrollView.setFillViewport(true);
+        scrollView.addView(form);
+        registrationDialog = new AlertDialog.Builder(requireContext())
+                .setTitle(R.string.profile_register_title)
+                .setView(scrollView)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.profile_register, null)
+                .create();
+        registrationCodeButton = sendCode;
+        sendCode.setOnClickListener(ignored -> {
+            String emailValue = value(email);
+            if (!android.util.Patterns.EMAIL_ADDRESS.matcher(emailValue).matches()) {
+                showMessage(getString(R.string.profile_registration_email_required));
+                return;
+            }
+            registrationCodeRequestPending = true;
+            sendCode.setEnabled(false);
+            sendCode.setText(R.string.profile_sending_code);
+            registrationCodeCountdown = 60;
+            mainHandler.removeCallbacks(updateRegistrationCodeCountdown);
+            mainHandler.post(updateRegistrationCodeCountdown);
+            accountViewModel.requestRegistrationCode(emailValue);
+        });
+        registrationDialog.setOnShowListener(ignored -> registrationDialog.getButton(
+                AlertDialog.BUTTON_POSITIVE).setOnClickListener(button -> {
+            String usernameValue = value(username);
+            String nicknameValue = value(nickname);
+            String emailValue = value(email);
+            String codeValue = value(code);
+            String passwordValue = value(password);
+            String confirmPasswordValue = value(confirmPassword);
+            if (usernameValue.isEmpty() || passwordValue.isEmpty()
+                    || !android.util.Patterns.EMAIL_ADDRESS.matcher(emailValue).matches()) {
+                showMessage(getString(R.string.form_invalid_registration));
+                return;
+            }
+            if (codeValue.isEmpty()) {
+                showMessage(getString(R.string.profile_code_required));
+                return;
+            }
+            if (!passwordValue.equals(confirmPasswordValue)) {
+                showMessage(getString(R.string.form_invalid_registration));
+                return;
+            }
+            accountViewModel.register(usernameValue, nicknameValue, emailValue, codeValue,
+                    passwordValue, confirmPasswordValue);
+        }));
+        registrationDialog.setOnDismissListener(ignored -> {
+            mainHandler.removeCallbacks(updateRegistrationCodeCountdown);
+            registrationCodeCountdown = 0;
+            registrationCodeButton = null;
+            registrationErrorView = null;
+            registrationCodeRequestPending = false;
+            registrationDialog = null;
+        });
+        registrationDialog.show();
+    }
+
+    private void resetRegistrationCodeCountdown() {
+        mainHandler.removeCallbacks(updateRegistrationCodeCountdown);
+        registrationCodeCountdown = 0;
+        if (registrationCodeButton != null) {
+            registrationCodeButton.setEnabled(true);
+            registrationCodeButton.setText(R.string.profile_request_code);
+        }
+    }
+
     private EditText field(int hint, int inputType) {
         EditText editText = new EditText(requireContext());
         editText.setSingleLine(true);
@@ -217,6 +373,18 @@ public final class NotificationsFragment extends Fragment {
 
     private static String value(EditText field) {
         return field.getText() == null ? "" : field.getText().toString().trim();
+    }
+
+    @Override
+    public void onDestroyView() {
+        mainHandler.removeCallbacks(updateRegistrationCodeCountdown);
+        if (registrationDialog != null) {
+            registrationDialog.dismiss();
+            registrationDialog = null;
+        }
+        registrationCodeButton = null;
+        registrationErrorView = null;
+        super.onDestroyView();
     }
 
     private void openDetail(ContentItem item) {

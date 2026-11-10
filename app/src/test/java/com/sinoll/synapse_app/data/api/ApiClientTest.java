@@ -22,7 +22,7 @@ public class ApiClientTest {
     public void developmentMediaUrlUsesConfiguredApiHost() {
         ApiClient client = ApiClient.forApplication();
 
-        assertEquals("http://192.168.10.10/uploads/thumb/blog/cover.jpg",
+        assertEquals("http://192.168.8.10/uploads/thumb/blog/cover.jpg",
                 client.resolveMediaUrl("http://192.168.8.10/uploads/thumb/blog/cover.jpg"));
     }
 
@@ -30,7 +30,7 @@ public class ApiClientTest {
     public void developmentMediaPathUsesConfiguredApiHost() {
         ApiClient client = ApiClient.forApplication();
 
-        assertEquals("http://192.168.10.10/uploads/thumb/blog/cover.jpg",
+        assertEquals("http://192.168.8.10/uploads/thumb/blog/cover.jpg",
                 client.resolveMediaUrl("uploads/thumb/blog/cover.jpg"));
     }
 

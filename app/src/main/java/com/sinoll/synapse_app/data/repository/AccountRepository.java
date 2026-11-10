@@ -41,24 +41,9 @@ public final class AccountRepository implements AutoCloseable {
     }
 
     public Future<?> login(String username, String password, Callback<JSONObject> callback) {
-        JSONObject body = new JSONObject();
-        try {
-            body.put("username", username);
-            body.put("password", password);
-        } catch (JSONException error) {
-            throw new IllegalArgumentException("Could not create login request.", error);
-        }
         return executor.submit(() -> {
             try {
-                JSONObject data = apiClient.post("auth/login", body, null);
-                String token = data.optString("token", "");
-                String tokenType = data.optString("token_type", "");
-                if (token.isEmpty() || tokenType.isEmpty()) {
-                    throw new IllegalStateException("登录响应缺少令牌信息。");
-                }
-                sessionStore.saveToken(token, tokenType);
-                JSONObject user = data.optJSONObject("user");
-                callback.onSuccess(user == null ? data : user);
+                callback.onSuccess(loginAndSaveSession(username, password));
             } catch (Exception error) {
                 callback.onError(error);
             }
@@ -72,20 +57,25 @@ public final class AccountRepository implements AutoCloseable {
     public Future<?> register(String username, String nickname, String email, String code,
                               String password, String confirmPassword,
                               Callback<JSONObject> callback) {
-        JSONObject body = new JSONObject();
-        try {
-            body.put("username", username);
-            body.put("email", email);
-            body.put("code", code);
-            body.put("password", password);
-            body.put("confirmPassword", confirmPassword);
-            if (nickname != null && !nickname.trim().isEmpty()) {
-                body.put("nickname", nickname.trim());
-            }
-        } catch (JSONException error) {
-            throw new IllegalArgumentException("Could not create registration request.", error);
-        }
+        JSONObject body = registrationRequest(username, nickname, email, code, password,
+                confirmPassword);
         return post("auth/register", body, null, callback);
+    }
+
+    public Future<?> registerAndLogin(String username, String nickname, String email,
+                                      String code, String password, String confirmPassword,
+                                      Runnable onRegistered, Callback<JSONObject> callback) {
+        JSONObject body = registrationRequest(username, nickname, email, code, password,
+                confirmPassword);
+        return executor.submit(() -> {
+            try {
+                apiClient.post("auth/register", body, null);
+                onRegistered.run();
+                callback.onSuccess(loginAndSaveSession(username, password));
+            } catch (Exception error) {
+                callback.onError(error);
+            }
+        });
     }
 
     public Future<?> requestPasswordResetCode(String email, Callback<JSONObject> callback) {
@@ -148,6 +138,40 @@ public final class AccountRepository implements AutoCloseable {
             body.put("email", email);
         } catch (JSONException error) {
             throw new IllegalArgumentException("Could not create email request.", error);
+        }
+        return body;
+    }
+
+    private JSONObject loginAndSaveSession(String username, String password) throws Exception {
+        JSONObject body = new JSONObject();
+        body.put("username", username);
+        body.put("password", password);
+        JSONObject data = apiClient.post("auth/login", body, null);
+        String token = data.optString("token", "");
+        String tokenType = data.optString("token_type", "");
+        if (token.isEmpty() || tokenType.isEmpty()) {
+            throw new IllegalStateException("登录响应缺少令牌信息。");
+        }
+        sessionStore.saveToken(token, tokenType);
+        JSONObject user = data.optJSONObject("user");
+        return user == null ? data : user;
+    }
+
+    private static JSONObject registrationRequest(String username, String nickname,
+                                                  String email, String code, String password,
+                                                  String confirmPassword) {
+        JSONObject body = new JSONObject();
+        try {
+            body.put("username", username);
+            body.put("email", email);
+            body.put("code", code);
+            body.put("password", password);
+            body.put("confirmPassword", confirmPassword);
+            if (nickname != null && !nickname.trim().isEmpty()) {
+                body.put("nickname", nickname.trim());
+            }
+        } catch (JSONException error) {
+            throw new IllegalArgumentException("Could not create registration request.", error);
         }
         return body;
     }

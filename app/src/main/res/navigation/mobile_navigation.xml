@@ -3,28 +3,36 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/mobile_navigation"
-    app:startDestination="@+id/navigation_home">
+    app:startDestination="@+id/navigation_moments">
 
     <fragment
-        android:id="@+id/navigation_home"
-        android:name="com.sinoll.synapse_app.ui.home.HomeFragment"
-        android:label="@string/title_home"
-        tools:layout="@layout/fragment_content_list">
-        <action
-            android:id="@+id/action_home_to_content_detail"
-            app:destination="@id/content_detail" />
-    </fragment>
+        android:id="@+id/navigation_moments"
+        android:name="com.sinoll.synapse_app.ui.content.MomentFragment"
+        android:label="@string/title_moments"
+        tools:layout="@layout/fragment_content_list" />
 
     <fragment
-        android:id="@+id/navigation_dashboard"
+        android:id="@+id/navigation_gallery"
+        android:name="com.sinoll.synapse_app.ui.content.GalleryFragment"
+        android:label="@string/title_gallery"
+        tools:layout="@layout/fragment_content_list" />
+
+    <fragment
+        android:id="@+id/navigation_video"
         android:name="com.sinoll.synapse_app.ui.dashboard.VideoFeedFragment"
-        android:label="@string/title_dashboard"
+        android:label="@string/title_video"
         tools:layout="@layout/fragment_video_feed" />
 
     <fragment
-        android:id="@+id/navigation_notifications"
+        android:id="@+id/navigation_blog"
+        android:name="com.sinoll.synapse_app.ui.home.HomeFragment"
+        android:label="@string/title_blog"
+        tools:layout="@layout/fragment_content_list" />
+
+    <fragment
+        android:id="@+id/navigation_profile"
         android:name="com.sinoll.synapse_app.ui.notifications.NotificationsFragment"
-        android:label="@string/title_notifications"
+        android:label="@string/title_profile"
         tools:layout="@layout/fragment_profile">
         <action
             android:id="@+id/action_profile_to_my_content"
@@ -33,6 +41,10 @@
             android:id="@+id/action_profile_to_content_detail"
             app:destination="@id/content_detail" />
     </fragment>
+
+    <action
+        android:id="@+id/action_global_content_detail"
+        app:destination="@id/content_detail" />
 
     <fragment
         android:id="@+id/my_content"

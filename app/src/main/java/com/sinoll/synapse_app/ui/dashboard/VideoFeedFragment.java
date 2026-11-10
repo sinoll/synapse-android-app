@@ -43,7 +43,8 @@ public final class VideoFeedFragment extends Fragment {
         adapter = new VideoPagerAdapter();
         adapter.setFullscreenListener(fullscreen -> {
             if (getActivity() instanceof com.sinoll.synapse_app.MainActivity) {
-                ((com.sinoll.synapse_app.MainActivity) getActivity()).setVideoFullscreen(fullscreen);
+                ((com.sinoll.synapse_app.MainActivity) getActivity())
+                        .setVideoFullscreen(fullscreen, false);
             }
         });
         pager.setOrientation(ViewPager2.ORIENTATION_VERTICAL);
@@ -51,14 +52,7 @@ public final class VideoFeedFragment extends Fragment {
         pager.registerOnPageChangeCallback(new ViewPager2.OnPageChangeCallback() {
             @Override
             public void onPageSelected(int position) {
-                if (adapter.isVertical(position)
-                        && requireActivity() instanceof com.sinoll.synapse_app.MainActivity
-                        && ((com.sinoll.synapse_app.MainActivity) requireActivity())
-                        .isVideoFullscreen()) {
-                    ((com.sinoll.synapse_app.MainActivity) requireActivity())
-                            .setVideoFullscreen(false);
-                    adapter.setFullscreenMode(false);
-                }
+                updateVideoFullscreen(position);
                 adapter.activate(position);
                 if (position >= adapter.getItemCount() - 2) {
                     viewModel.loadNextPage();
@@ -69,6 +63,7 @@ public final class VideoFeedFragment extends Fragment {
         viewModel.getPage().observe(getViewLifecycleOwner(), page -> {
             if (page != null) {
                 adapter.submitItems(page.getItems());
+                updateVideoFullscreen(pager.getCurrentItem());
             }
             renderState(page);
         });
@@ -111,6 +106,14 @@ public final class VideoFeedFragment extends Fragment {
         super.onPause();
         if (adapter != null) {
             adapter.pauseActive();
+            if (requireActivity() instanceof com.sinoll.synapse_app.MainActivity) {
+                com.sinoll.synapse_app.MainActivity activity =
+                        (com.sinoll.synapse_app.MainActivity) requireActivity();
+                if (activity.isVerticalVideoFullscreen()) {
+                    activity.setVideoFullscreen(false, false);
+                    adapter.setFullscreenMode(false);
+                }
+            }
         }
     }
 
@@ -119,9 +122,11 @@ public final class VideoFeedFragment extends Fragment {
         super.onResume();
         if (adapter != null) {
             if (requireActivity() instanceof com.sinoll.synapse_app.MainActivity) {
-                adapter.setFullscreenMode(((com.sinoll.synapse_app.MainActivity) requireActivity())
-                        .isVideoFullscreen());
+                com.sinoll.synapse_app.MainActivity activity =
+                        (com.sinoll.synapse_app.MainActivity) requireActivity();
+                adapter.setFullscreenMode(activity.isVideoFullscreen());
             }
+            updateVideoFullscreen(pager.getCurrentItem());
             adapter.activate(pager.getCurrentItem());
         }
     }
@@ -130,8 +135,25 @@ public final class VideoFeedFragment extends Fragment {
     public void onConfigurationChanged(@NonNull android.content.res.Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         if (adapter != null && requireActivity() instanceof com.sinoll.synapse_app.MainActivity) {
-            adapter.setFullscreenMode(((com.sinoll.synapse_app.MainActivity) requireActivity())
-                    .isVideoFullscreen());
+            com.sinoll.synapse_app.MainActivity activity =
+                    (com.sinoll.synapse_app.MainActivity) requireActivity();
+            adapter.setFullscreenMode(activity.isVideoFullscreen());
+        }
+    }
+
+    private void updateVideoFullscreen(int position) {
+        if (position < 0 || !isAdded()
+                || !(requireActivity() instanceof com.sinoll.synapse_app.MainActivity)) {
+            return;
+        }
+        com.sinoll.synapse_app.MainActivity activity =
+                (com.sinoll.synapse_app.MainActivity) requireActivity();
+        if (adapter.isVertical(position)) {
+            activity.setVideoFullscreen(true, true);
+            adapter.setFullscreenMode(true);
+        } else if (activity.isVerticalVideoFullscreen()) {
+            activity.setVideoFullscreen(false, false);
+            adapter.setFullscreenMode(false);
         }
     }
 }
