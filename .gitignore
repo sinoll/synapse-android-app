@@ -57,4 +57,5 @@ google-services.json    # 如果仓库是公开的,建议取消注释
 Thumbs.db
 # == server address ==
 app/src/development/res/xml/network_security_config.xml
+app/src/developmentDebug/res/xml/network_security_config.xml
 app/src/main/res/xml/network_security_config.xml
