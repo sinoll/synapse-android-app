@@ -63,10 +63,14 @@
                 <TextView
                     android:id="@+id/content_category_blog_icon"
                     style="@style/Widget.Synapse.CategoryIcon"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="文" />
 
                 <TextView
                     style="@style/Widget.Synapse.CategoryLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="@string/content_type_blog" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -89,10 +93,14 @@
                 <TextView
                     android:id="@+id/content_category_moment_icon"
                     style="@style/Widget.Synapse.CategoryIcon"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="动" />
 
                 <TextView
                     style="@style/Widget.Synapse.CategoryLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="@string/content_type_moment" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -115,10 +123,14 @@
                 <TextView
                     android:id="@+id/content_category_images_icon"
                     style="@style/Widget.Synapse.CategoryIcon"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="集" />
 
                 <TextView
                     style="@style/Widget.Synapse.CategoryLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="@string/content_type_images" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -140,10 +152,14 @@
                 <TextView
                     android:id="@+id/content_category_video_icon"
                     style="@style/Widget.Synapse.CategoryIcon"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="影" />
 
                 <TextView
                     style="@style/Widget.Synapse.CategoryLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="@string/title_dashboard" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

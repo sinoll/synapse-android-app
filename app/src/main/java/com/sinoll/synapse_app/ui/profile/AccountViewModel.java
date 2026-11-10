@@ -7,7 +7,6 @@ import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 
-import com.sinoll.synapse_app.BuildConfig;
 import com.sinoll.synapse_app.data.api.ApiClient;
 import com.sinoll.synapse_app.data.api.ApiException;
 import com.sinoll.synapse_app.data.repository.AccountRepository;
@@ -31,7 +30,7 @@ public final class AccountViewModel extends AndroidViewModel {
     public AccountViewModel(@NonNull Application application) {
         super(application);
         sessionStore = new SessionStore(application);
-        repository = new AccountRepository(new ApiClient(BuildConfig.API_BASE_URL), sessionStore);
+        repository = new AccountRepository(ApiClient.forApplication(), sessionStore);
     }
 
     public LiveData<JSONObject> getUser() {

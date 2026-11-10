@@ -6,7 +6,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.widget.ImageView;
 
-import com.sinoll.synapse_app.BuildConfig;
 import com.sinoll.synapse_app.data.api.ApiClient;
 import com.sinoll.synapse_app.R;
 
@@ -23,7 +22,7 @@ final class RemoteImageLoader {
     private static final int MAX_IMAGE_BYTES = 8 * 1024 * 1024;
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(3);
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
-    private static final ApiClient API_CLIENT = new ApiClient(BuildConfig.API_BASE_URL);
+    private static final ApiClient API_CLIENT = ApiClient.forApplication();
 
     void load(String url, ImageView imageView) {
         String resolved = API_CLIENT.resolveMediaUrl(url);

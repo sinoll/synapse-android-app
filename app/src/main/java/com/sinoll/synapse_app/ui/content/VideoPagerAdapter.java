@@ -12,7 +12,6 @@ import android.widget.VideoView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.sinoll.synapse_app.BuildConfig;
 import com.sinoll.synapse_app.R;
 import com.sinoll.synapse_app.data.api.ApiClient;
 import com.sinoll.synapse_app.data.model.ContentItem;
@@ -156,7 +155,7 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
         void bind(ContentItem item, int position) {
             prepared = false;
             video.stopPlayback();
-            String url = new ApiClient(BuildConfig.API_BASE_URL)
+            String url = ApiClient.forApplication()
                     .resolveMediaUrl(item.getVideoUrl());
             title.setText(item.getTitle());
             description.setText(item.getText().isEmpty()

@@ -11,6 +11,11 @@ public class ApiClientTest {
         assertNotNull(new ApiClient("https://192.168.10.10/"));
     }
 
+    @Test
+    public void applicationApiClientUsesConfiguredBaseUrl() {
+        assertNotNull(ApiClient.forApplication());
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void rejectsHttpApiBaseUrl() {
         new ApiClient("http://192.168.10.10/");

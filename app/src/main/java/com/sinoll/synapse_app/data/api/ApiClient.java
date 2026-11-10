@@ -3,6 +3,8 @@ package com.sinoll.synapse_app.data.api;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import com.sinoll.synapse_app.BuildConfig;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -16,11 +18,24 @@ public final class ApiClient {
     private static final int CONNECT_TIMEOUT_MILLIS = 15000;
     private static final int READ_TIMEOUT_MILLIS = 30000;
     private static final int MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+    private static final String DEVELOPMENT_HTTP_HOST = "192.168.10.10";
 
     private final String baseUrl;
+    private final boolean allowsDevelopmentHttp;
 
     public ApiClient(String baseUrl) {
-        this.baseUrl = normalizeBaseUrl(baseUrl);
+        this(baseUrl, false);
+    }
+
+    private ApiClient(String baseUrl, boolean allowsDevelopmentHttp) {
+        this.allowsDevelopmentHttp = allowsDevelopmentHttp;
+        this.baseUrl = normalizeBaseUrl(baseUrl, allowsDevelopmentHttp);
+    }
+
+    public static ApiClient forApplication() {
+        boolean allowsDevelopmentHttp = BuildConfig.DEBUG
+                && "development".equals(BuildConfig.FLAVOR);
+        return new ApiClient(BuildConfig.API_BASE_URL, allowsDevelopmentHttp);
     }
 
     public JSONObject get(String path, String query, String authorization)
@@ -80,9 +95,13 @@ public final class ApiClient {
             URI base = new URI(baseUrl);
             URI media = new URI(value.trim());
             URI resolved = media.isAbsolute() ? media : base.resolve(media);
-            if (!"https".equalsIgnoreCase(resolved.getScheme())
-                    || resolved.getHost() == null
-                    || resolved.getUserInfo() != null
+            boolean isHttps = "https".equalsIgnoreCase(resolved.getScheme());
+            boolean isAllowedDevelopmentHttp = allowsDevelopmentHttp
+                    && "http".equalsIgnoreCase(resolved.getScheme())
+                    && "http".equalsIgnoreCase(base.getScheme())
+                    && base.getRawAuthority().equals(resolved.getRawAuthority());
+            if ((!isHttps && !isAllowedDevelopmentHttp)
+                    || resolved.getHost() == null || resolved.getUserInfo() != null
                     || resolved.getFragment() != null) {
                 return null;
             }
@@ -105,7 +124,7 @@ public final class ApiClient {
         try {
             URI uri = new URI(url);
             URI baseUri = new URI(baseUrl);
-            if (!"https".equalsIgnoreCase(uri.getScheme())
+            if (!baseUri.getScheme().equalsIgnoreCase(uri.getScheme())
                     || !baseUri.getRawAuthority().equals(uri.getRawAuthority())
                     || !uri.getRawPath().startsWith(baseUri.getRawPath())
                     || uri.getRawFragment() != null || uri.getUserInfo() != null) {
@@ -117,15 +136,20 @@ public final class ApiClient {
         }
     }
 
-    private static String normalizeBaseUrl(String value) {
+    private static String normalizeBaseUrl(String value, boolean allowDevelopmentHttp) {
         if (value == null || value.trim().isEmpty()) {
             throw new IllegalArgumentException("API base URL must not be empty.");
         }
         try {
             URI uri = new URI(value.trim());
-            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null
+            boolean isHttps = "https".equalsIgnoreCase(uri.getScheme());
+            boolean isAllowedDevelopmentHttp = allowDevelopmentHttp
+                    && "http".equalsIgnoreCase(uri.getScheme())
+                    && DEVELOPMENT_HTTP_HOST.equals(uri.getHost());
+            if ((!isHttps && !isAllowedDevelopmentHttp) || uri.getHost() == null
                     || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null) {
-                throw new IllegalArgumentException("API base URL must be a valid HTTPS URL.");
+                throw new IllegalArgumentException(
+                        "API base URL must use HTTPS, except for the development debug server.");
             }
             String normalized = uri.toASCIIString();
             return normalized.endsWith("/") ? normalized : normalized + "/";

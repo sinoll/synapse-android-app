@@ -4,7 +4,6 @@ import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
-import com.sinoll.synapse_app.BuildConfig;
 import com.sinoll.synapse_app.data.api.ApiClient;
 import com.sinoll.synapse_app.data.api.ApiException;
 import com.sinoll.synapse_app.data.model.ContentItem;
@@ -17,7 +16,7 @@ import java.util.concurrent.Future;
 public final class ContentDetailViewModel extends ViewModel {
 
     private final ContentRepository repository =
-            new ContentRepository(new ApiClient(BuildConfig.API_BASE_URL));
+            new ContentRepository(ApiClient.forApplication());
     private final MutableLiveData<ContentItem> item = new MutableLiveData<>();
     private final MutableLiveData<Boolean> loading = new MutableLiveData<>(false);
     private final MutableLiveData<String> errorMessage = new MutableLiveData<>();
