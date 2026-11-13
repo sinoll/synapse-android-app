@@ -105,7 +105,13 @@
     <string name="create_content_uploading_video">正在上传视频…</string>
 
     <string name="video_publish_title">发布视频</string>
+    <string name="video_publish_step_upload">上传视频</string>
+    <string name="video_publish_step_details">作品信息</string>
+    <string name="video_publish_step_upload_hint">先选择或拍摄视频，上传成功后即可预览并继续</string>
+    <string name="video_publish_step_details_hint">补充作品标题、描述和可见范围</string>
     <string name="video_publish_action">发布</string>
+    <string name="video_publish_next">下一步</string>
+    <string name="video_publish_cancel">取消</string>
     <string name="video_publish_close">关闭</string>
     <string name="video_publish_empty_title">拍摄或选择一段视频</string>
     <string name="video_publish_empty_subtitle">直接拍摄新视频，或从相册中选择已有视频</string>
@@ -119,8 +125,9 @@
     <string name="video_publish_camera_unavailable">未找到可用的相机应用。</string>
     <string name="video_publish_capture_failed">拍摄失败，请重试。</string>
     <string name="video_publish_file_failed">无法创建视频文件，请重试。</string>
-    <string name="video_publish_required">请先拍摄或选择视频。</string>
+    <string name="video_publish_required">请先上传视频。</string>
     <string name="video_publish_uploading">正在上传视频…</string>
+    <string name="video_publish_upload_failed">视频上传失败，请重新选择或拍摄后重试。</string>
     <string name="video_publish_publishing">正在发布…</string>
     <string name="video_publish_success">发布成功</string>
     <string name="video_publish_login_expired">登录状态已失效，请重新登录后发布。</string>

@@ -3,9 +3,9 @@ plugins {
 }
 
 def apiBaseUrls = [
-    development: (findProperty('apiBaseUrlDevelopment') ?: 'http://192.168.10.10/').toString(),
-    staging: (findProperty('apiBaseUrlStaging') ?: 'https://192.168.10.10/').toString(),
-    production: (findProperty('apiBaseUrlProduction') ?: 'https://192.168.10.10/').toString()
+    development: (findProperty('apiBaseUrlDevelopment') ?: 'http://192.168.8.10/').toString(),
+    staging: (findProperty('apiBaseUrlStaging') ?: 'https://192.168.8.10/').toString(),
+    production: (findProperty('apiBaseUrlProduction') ?: 'https://test.sinocd.cn/').toString()
 ]
 
 def buildConfigString = { value ->

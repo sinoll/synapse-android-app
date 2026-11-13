@@ -1,6 +1,9 @@
 package com.sinoll.synapse_app.data.repository;
 
+import android.util.Log;
+
 import com.sinoll.synapse_app.data.api.ApiClient;
+import com.sinoll.synapse_app.data.api.ApiException;
 import com.sinoll.synapse_app.data.model.Category;
 import com.sinoll.synapse_app.data.model.ContentItem;
 import com.sinoll.synapse_app.data.model.ContentPage;
@@ -18,6 +21,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 public final class ContentRepository implements AutoCloseable {
+
+    private static final String TAG = "ContentRepository";
 
     private final ApiClient apiClient;
     private final ExecutorService executor;
@@ -117,9 +122,8 @@ public final class ContentRepository implements AutoCloseable {
         });
     }
 
-    public Future<?> createVideo(String title, String description, UploadStream video,
-                                 long durationSeconds, int videoType, int visibility,
-                                 String authorization, Callback<JSONObject> callback) {
+    public Future<?> uploadVideo(UploadStream video, String authorization,
+                                 Callback<JSONObject> callback) {
         if (video == null || callback == null) {
             throw new IllegalArgumentException("video and callback are required.");
         }
@@ -127,13 +131,35 @@ public final class ContentRepository implements AutoCloseable {
             try (InputStream input = video.open()) {
                 JSONObject upload = apiClient.upload("video", video.getFileName(),
                         video.getMimeType(), input, video.getLength(), authorization);
-                String videoPath = upload.optString("path", "");
-                if (videoPath.isEmpty()) {
-                    videoPath = upload.optString("file_path", "");
-                }
-                if (videoPath.isEmpty()) {
+                String videoPath = upload.optString("path",
+                        upload.optString("file_path", ""));
+                if (videoPath.trim().isEmpty()) {
                     throw new IllegalStateException("视频上传响应缺少路径。");
                 }
+                callback.onSuccess(upload);
+            } catch (Exception error) {
+                if (error instanceof ApiException) {
+                    ApiException apiError = (ApiException) error;
+                    Log.e(TAG, "Failed while uploading video (HTTP "
+                            + apiError.getHttpStatus() + ", API " + apiError.getApiCode()
+                            + ", fields " + apiError.getFieldErrors() + ")", error);
+                } else {
+                    Log.e(TAG, "Failed while uploading video", error);
+                }
+                callback.onError(error);
+            }
+        });
+    }
+
+    public Future<?> createVideo(String videoPath, String coverPath, String title,
+                                 String description, long durationSeconds, int videoType,
+                                 int visibility, String authorization,
+                                 Callback<JSONObject> callback) {
+        if (videoPath == null || videoPath.trim().isEmpty() || callback == null) {
+            throw new IllegalArgumentException("video path and callback are required.");
+        }
+        return executor.submit(() -> {
+            try {
                 JSONObject body = new JSONObject();
                 body.put("video_path", videoPath);
                 String normalizedTitle = trimToNull(title);
@@ -144,9 +170,9 @@ public final class ContentRepository implements AutoCloseable {
                 if (normalizedDescription != null) {
                     body.put("description", normalizedDescription);
                 }
-                String coverPath = upload.optString("thumbnail_path", "");
-                if (!coverPath.isEmpty()) {
-                    body.put("cover_path", coverPath);
+                String normalizedCoverPath = trimToNull(coverPath);
+                if (normalizedCoverPath != null) {
+                    body.put("cover_path", normalizedCoverPath);
                 }
                 if (durationSeconds > 0) {
                     body.put("duration_seconds", durationSeconds);
@@ -156,6 +182,37 @@ public final class ContentRepository implements AutoCloseable {
                 body.put("visibility", visibility);
                 callback.onSuccess(apiClient.post("short_video", body, authorization));
             } catch (Exception error) {
+                if (error instanceof ApiException) {
+                    ApiException apiError = (ApiException) error;
+                    Log.e(TAG, "Failed while creating short video (HTTP "
+                            + apiError.getHttpStatus() + ", API " + apiError.getApiCode()
+                            + ", fields " + apiError.getFieldErrors() + ")", error);
+                } else {
+                    Log.e(TAG, "Failed while creating short video", error);
+                }
+                callback.onError(error);
+            }
+        });
+    }
+
+    public Future<?> createVideo(String title, String description, UploadStream video,
+                                 long durationSeconds, int videoType, int visibility,
+                                 String authorization, Callback<JSONObject> callback) {
+        if (video == null || callback == null) {
+            throw new IllegalArgumentException("video and callback are required.");
+        }
+        return uploadVideo(video, authorization, new Callback<JSONObject>() {
+            @Override
+            public void onSuccess(JSONObject upload) {
+                String videoPath = upload.optString("path",
+                        upload.optString("file_path", ""));
+                String coverPath = upload.optString("thumbnail_path", "");
+                createVideo(videoPath, coverPath, title, description, durationSeconds,
+                        videoType, visibility, authorization, callback);
+            }
+
+            @Override
+            public void onError(Exception error) {
                 callback.onError(error);
             }
         });

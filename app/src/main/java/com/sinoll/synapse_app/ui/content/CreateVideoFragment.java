@@ -11,6 +11,7 @@ import android.os.Bundle;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -39,6 +40,8 @@ import com.sinoll.synapse_app.data.model.ContentType;
 import com.sinoll.synapse_app.data.repository.ContentRepository;
 import com.sinoll.synapse_app.data.session.SessionStore;
 
+import org.json.JSONObject;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -50,6 +53,8 @@ import java.util.concurrent.Executors;
  * system camera or pick an existing video from the gallery, then publish it.
  */
 public final class CreateVideoFragment extends Fragment {
+
+    private static final String TAG = "CreateVideoFragment";
 
     private static final int VISIBILITY_AUTHOR = 0;
     private static final int VISIBILITY_USERS = 1;
@@ -67,8 +72,14 @@ public final class CreateVideoFragment extends Fragment {
     private ExecutorService worker;
     private VideoView preview;
     private View emptyState;
+    private View uploadStep;
+    private View detailsStep;
+    private View selectActions;
+    private TextView heading;
     private ImageButton playToggle;
     private TextView changeButton;
+    private MaterialButton nextButton;
+    private MaterialButton cancelButton;
     private MaterialButton submitButton;
     private EditText descriptionInput;
     private EditText titleInput;
@@ -84,6 +95,14 @@ public final class CreateVideoFragment extends Fragment {
     private Uri pendingCaptureUri;
     private File pendingCaptureFile;
     private int selectedVisibility = VISIBILITY_PUBLIC;
+    private int uploadedVideoType = 2;
+    private long uploadedDurationSeconds;
+    private String uploadedVideoPath;
+    private String uploadedCoverPath;
+    private boolean uploadingVideo;
+    private boolean uploadComplete;
+    private boolean previewReady;
+    private boolean detailsVisible;
     private boolean resultHandled;
 
     @Nullable
@@ -100,8 +119,14 @@ public final class CreateVideoFragment extends Fragment {
         worker = Executors.newSingleThreadExecutor();
         preview = view.findViewById(R.id.video_preview);
         emptyState = view.findViewById(R.id.video_preview_empty);
+        uploadStep = view.findViewById(R.id.video_publish_upload_step);
+        detailsStep = view.findViewById(R.id.video_publish_details_step);
+        selectActions = view.findViewById(R.id.video_publish_select_actions);
+        heading = view.findViewById(R.id.video_publish_heading);
         playToggle = view.findViewById(R.id.video_preview_toggle);
         changeButton = view.findViewById(R.id.video_preview_change);
+        nextButton = view.findViewById(R.id.video_publish_next);
+        cancelButton = view.findViewById(R.id.video_publish_cancel);
         submitButton = view.findViewById(R.id.video_publish_submit);
         descriptionInput = view.findViewById(R.id.video_publish_description);
         titleInput = view.findViewById(R.id.video_publish_title_input);
@@ -111,8 +136,9 @@ public final class CreateVideoFragment extends Fragment {
 
         setupVisibilityDropdown();
         view.findViewById(R.id.video_publish_close)
-                .setOnClickListener(ignored -> Navigation.findNavController(requireView())
-                        .popBackStack());
+                .setOnClickListener(ignored -> cancelPublishing());
+        cancelButton.setOnClickListener(ignored -> cancelPublishing());
+        nextButton.setOnClickListener(ignored -> showDetailsStep());
         submitButton.setOnClickListener(ignored -> publish());
         view.findViewById(R.id.video_publish_record)
                 .setOnClickListener(ignored -> recordVideo());
@@ -121,26 +147,57 @@ public final class CreateVideoFragment extends Fragment {
         changeButton.setOnClickListener(ignored -> videoPicker.launch("video/*"));
         playToggle.setOnClickListener(ignored -> togglePlayback());
 
-        submitButton.setEnabled(false);
         preview.setOnCompletionListener(mediaPlayer -> updatePlayToggle(false));
         preview.setOnErrorListener((mediaPlayer, what, extra) -> {
             updatePlayToggle(false);
             showMessage(getString(R.string.video_publish_read_failed));
             return true;
         });
+        preview.setOnPreparedListener(mediaPlayer -> {
+            mediaPlayer.setLooping(true);
+            preview.seekTo(1);
+            previewReady = true;
+            updatePlayToggle(false);
+            updateWorkflowUi();
+        });
 
         viewModel.getPublishing().observe(getViewLifecycleOwner(), publishing -> {
-            boolean busy = Boolean.TRUE.equals(publishing);
-            submitButton.setEnabled(!busy && selectedVideo != null);
-            progress.setVisibility(busy ? View.VISIBLE : View.GONE);
+            updateWorkflowUi();
         });
         viewModel.getErrorMessage().observe(getViewLifecycleOwner(), message -> {
             if (TextUtils.isEmpty(message)) {
                 return;
             }
-            progress.setVisibility(View.GONE);
-            submitButton.setEnabled(selectedVideo != null);
+            if (uploadingVideo) {
+                uploadingVideo = false;
+                uploadComplete = false;
+                previewReady = false;
+            }
             showMessage(message);
+            updateWorkflowUi();
+        });
+        viewModel.getUploadedVideo().observe(getViewLifecycleOwner(), upload -> {
+            if (upload == null) {
+                return;
+            }
+            uploadedVideoPath = upload.optString("path",
+                    upload.optString("file_path", ""));
+            uploadedCoverPath = upload.optString("thumbnail_path", "");
+            uploadingVideo = false;
+            uploadComplete = !uploadedVideoPath.trim().isEmpty();
+            if (!uploadComplete) {
+                showMessage(getString(R.string.video_publish_upload_failed));
+                updateWorkflowUi();
+                return;
+            }
+            showMessage("");
+            preview.stopPlayback();
+            emptyState.setVisibility(View.GONE);
+            preview.setVisibility(View.VISIBLE);
+            playToggle.setVisibility(View.VISIBLE);
+            previewReady = false;
+            preview.setVideoURI(selectedVideo);
+            updateWorkflowUi();
         });
         viewModel.getCreatedId().observe(getViewLifecycleOwner(), id -> {
             if (resultHandled || id == null) {
@@ -148,7 +205,6 @@ public final class CreateVideoFragment extends Fragment {
             }
             resultHandled = true;
             progress.setVisibility(View.GONE);
-            submitButton.setEnabled(true);
             viewModel.clearCreated();
             deleteQuietly(capturedFile);
             capturedFile = null;
@@ -161,6 +217,7 @@ public final class CreateVideoFragment extends Fragment {
                     Toast.LENGTH_SHORT).show();
             Navigation.findNavController(requireView()).popBackStack();
         });
+        updateWorkflowUi();
     }
 
     private void setupVisibilityDropdown() {
@@ -228,7 +285,7 @@ public final class CreateVideoFragment extends Fragment {
         }
         deleteQuietly(capturedFile);
         capturedFile = captured;
-        setSelectedVideo(uri, captured.getName(), "video/mp4", captured.length());
+        prepareAndUploadVideo(uri, captured.getName(), "video/mp4", captured.length());
     }
 
     private void onVideoSelected(@Nullable Uri uri) {
@@ -254,26 +311,64 @@ public final class CreateVideoFragment extends Fragment {
         }
         deleteQuietly(capturedFile);
         capturedFile = null;
-        setSelectedVideo(uri, name, mimeType, size);
+        prepareAndUploadVideo(uri, name, mimeType, size);
     }
 
-    private void setSelectedVideo(Uri uri, String name, String mimeType, long size) {
+    private void prepareAndUploadVideo(Uri uri, String name, String mimeType, long size) {
+        String authorization = getAuthorization();
+        if (authorization == null) {
+            showMessage(getString(R.string.video_publish_login_expired));
+            return;
+        }
         selectedVideo = uri;
         selectedVideoName = name;
         selectedVideoMime = mimeType;
         selectedVideoSize = size;
-        emptyState.setVisibility(View.GONE);
-        preview.setVisibility(View.VISIBLE);
-        playToggle.setVisibility(View.VISIBLE);
-        changeButton.setVisibility(View.VISIBLE);
-        submitButton.setEnabled(true);
-        showMessage("");
         preview.stopPlayback();
-        preview.setVideoURI(uri);
-        preview.setOnPreparedListener(mediaPlayer -> {
-            mediaPlayer.setLooping(true);
-            preview.seekTo(1);
-            updatePlayToggle(false);
+        preview.setVisibility(View.GONE);
+        playToggle.setVisibility(View.GONE);
+        changeButton.setVisibility(View.GONE);
+        emptyState.setVisibility(View.VISIBLE);
+        uploadingVideo = true;
+        uploadComplete = false;
+        previewReady = false;
+        uploadedVideoPath = null;
+        uploadedCoverPath = null;
+        viewModel.clearUploadedVideo();
+        showMessage(getString(R.string.video_publish_uploading));
+        updateWorkflowUi();
+
+        final ContentResolver resolver = requireContext().getApplicationContext()
+                .getContentResolver();
+        final Context appContext = requireContext().getApplicationContext();
+        worker.execute(() -> {
+            readVideoMetadata(appContext, uri);
+            ContentRepository.UploadStream stream = new ContentRepository.UploadStream() {
+                @Override
+                public String getFileName() {
+                    return name;
+                }
+
+                @Override
+                public String getMimeType() {
+                    return mimeType;
+                }
+
+                @Override
+                public long getLength() {
+                    return size;
+                }
+
+                @Override
+                public InputStream open() throws IOException {
+                    InputStream input = resolver.openInputStream(uri);
+                    if (input == null) {
+                        throw new IOException("Video stream is unavailable.");
+                    }
+                    return input;
+                }
+            };
+            viewModel.uploadVideo(stream, authorization);
         });
     }
 
@@ -296,97 +391,98 @@ public final class CreateVideoFragment extends Fragment {
                 ? R.string.video_publish_pause : R.string.video_publish_play));
     }
 
+    private void readVideoMetadata(Context context, Uri uri) {
+        uploadedDurationSeconds = 0;
+        uploadedVideoType = 2;
+        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(context, uri);
+            uploadedDurationSeconds = parseLong(retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_DURATION)) / 1000;
+            int width = (int) parseLong(retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH));
+            int height = (int) parseLong(retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
+            int rotation = (int) parseLong(retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION));
+            if (rotation == 90 || rotation == 270) {
+                int swap = width;
+                width = height;
+                height = swap;
+            }
+            if (width > 0 && height > 0) {
+                uploadedVideoType = height > width ? 2 : 1;
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "Could not read optional video metadata; using vertical defaults",
+                    error);
+        } finally {
+            try {
+                retriever.release();
+            } catch (Exception error) {
+                Log.w(TAG, "Could not release video metadata retriever", error);
+            }
+        }
+    }
+
+    private void showDetailsStep() {
+        if (!uploadComplete || !previewReady) {
+            return;
+        }
+        detailsVisible = true;
+        if (preview.isPlaying()) {
+            preview.pause();
+            updatePlayToggle(false);
+        }
+        showMessage("");
+        updateWorkflowUi();
+    }
+
+    private void cancelPublishing() {
+        Navigation.findNavController(requireView()).popBackStack();
+    }
+
+    private void updateWorkflowUi() {
+        if (uploadStep == null || !isAdded()) {
+            return;
+        }
+        boolean busy = uploadingVideo
+                || Boolean.TRUE.equals(viewModel.getPublishing().getValue());
+        uploadStep.setVisibility(detailsVisible ? View.GONE : View.VISIBLE);
+        detailsStep.setVisibility(detailsVisible ? View.VISIBLE : View.GONE);
+        heading.setText(detailsVisible
+                ? R.string.video_publish_step_details : R.string.video_publish_step_upload);
+        selectActions.setVisibility(!detailsVisible && !uploadComplete && !uploadingVideo
+                ? View.VISIBLE : View.GONE);
+        boolean canContinue = !detailsVisible && uploadComplete && previewReady && !busy;
+        nextButton.setVisibility(canContinue ? View.VISIBLE : View.GONE);
+        cancelButton.setVisibility(canContinue || detailsVisible ? View.VISIBLE : View.GONE);
+        submitButton.setVisibility(detailsVisible ? View.VISIBLE : View.GONE);
+        nextButton.setEnabled(canContinue);
+        cancelButton.setEnabled(!busy);
+        submitButton.setEnabled(detailsVisible && !busy);
+        progress.setVisibility(busy ? View.VISIBLE : View.GONE);
+    }
+
     private void publish() {
         String authorization = getAuthorization();
         if (authorization == null) {
             showMessage(getString(R.string.video_publish_login_expired));
             return;
         }
-        if (selectedVideo == null) {
+        if (!uploadComplete || uploadedVideoPath == null) {
             showMessage(getString(R.string.video_publish_required));
             return;
         }
-        showProgress(getString(R.string.video_publish_uploading));
-        final ContentResolver resolver = requireContext().getApplicationContext()
-                .getContentResolver();
-        final Context appContext = requireContext().getApplicationContext();
-        final Uri uri = selectedVideo;
-        final String fileName = selectedVideoName;
-        final String mimeType = selectedVideoMime;
-        final long length = selectedVideoSize;
-        final String title = titleInput.getText().toString();
-        final String description = descriptionInput.getText().toString();
-        final int visibility = selectedVisibility;
-        final String readFailed = getString(R.string.video_publish_read_failed);
-        worker.execute(() -> {
-            long durationSeconds = 0;
-            int videoType = 2;
-            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-            try {
-                retriever.setDataSource(appContext, uri);
-                durationSeconds = parseLong(retriever.extractMetadata(
-                        MediaMetadataRetriever.METADATA_KEY_DURATION)) / 1000;
-                int width = (int) parseLong(retriever.extractMetadata(
-                        MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH));
-                int height = (int) parseLong(retriever.extractMetadata(
-                        MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
-                int rotation = (int) parseLong(retriever.extractMetadata(
-                        MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION));
-                if (rotation == 90 || rotation == 270) {
-                    int swap = width;
-                    width = height;
-                    height = swap;
-                }
-                if (width > 0 && height > 0) {
-                    videoType = height > width ? 2 : 1;
-                }
-            } catch (Exception error) {
-                // Metadata is optional; fall back to the vertical feed default.
-            } finally {
-                try {
-                    retriever.release();
-                } catch (Exception ignored) {
-                    // Nothing else to release.
-                }
-            }
-            ContentRepository.UploadStream stream = new ContentRepository.UploadStream() {
-                @Override
-                public String getFileName() {
-                    return fileName;
-                }
-
-                @Override
-                public String getMimeType() {
-                    return mimeType;
-                }
-
-                @Override
-                public long getLength() {
-                    return length;
-                }
-
-                @Override
-                public InputStream open() throws IOException {
-                    InputStream input = resolver.openInputStream(uri);
-                    if (input == null) {
-                        throw new IOException("Video stream is unavailable.");
-                    }
-                    return input;
-                }
-            };
-            try {
-                viewModel.publishVideo(title, description, stream, durationSeconds,
-                        videoType, visibility, authorization);
-            } catch (Exception error) {
-                viewModel.fail(readFailed);
-            }
-        });
+        showProgress(getString(R.string.video_publish_publishing));
+        viewModel.publishUploadedVideo(uploadedVideoPath, uploadedCoverPath,
+                titleInput.getText().toString(), descriptionInput.getText().toString(),
+                uploadedDurationSeconds, uploadedVideoType, selectedVisibility, authorization);
     }
 
     private void showProgress(String message) {
-        progress.setVisibility(View.VISIBLE);
-        submitButton.setEnabled(false);
         showMessage(message);
+        updateWorkflowUi();
     }
 
     private void showMessage(String message) {

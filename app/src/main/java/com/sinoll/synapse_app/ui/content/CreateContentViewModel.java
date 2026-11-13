@@ -16,6 +16,7 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Future;
 
 public final class CreateContentViewModel extends ViewModel {
@@ -25,6 +26,7 @@ public final class CreateContentViewModel extends ViewModel {
     private final MutableLiveData<Boolean> publishing = new MutableLiveData<>(false);
     private final MutableLiveData<String> errorMessage = new MutableLiveData<>();
     private final MutableLiveData<Integer> createdId = new MutableLiveData<>();
+    private final MutableLiveData<JSONObject> uploadedVideo = new MutableLiveData<>();
     private final MutableLiveData<List<Category>> categories = new MutableLiveData<>();
 
     private Future<?> activeRequest;
@@ -41,8 +43,16 @@ public final class CreateContentViewModel extends ViewModel {
         return createdId;
     }
 
+    public LiveData<JSONObject> getUploadedVideo() {
+        return uploadedVideo;
+    }
+
     public void clearCreated() {
         createdId.setValue(null);
+    }
+
+    public void clearUploadedVideo() {
+        uploadedVideo.setValue(null);
     }
 
     public LiveData<List<Category>> getCategories() {
@@ -120,6 +130,45 @@ public final class CreateContentViewModel extends ViewModel {
         submit(repository.createGallery(caption, files, visibility, authorization, callback()));
     }
 
+    public void uploadVideo(ContentRepository.UploadStream video, String authorization) {
+        if (video == null) {
+            fail("请选择要发布的视频。");
+            return;
+        }
+        uploadedVideo.postValue(null);
+        errorMessage.postValue(null);
+        publishing.postValue(true);
+        activeRequest = repository.uploadVideo(video, authorization,
+                new ContentRepository.Callback<JSONObject>() {
+                    @Override
+                    public void onSuccess(JSONObject value) {
+                        publishing.postValue(false);
+                        uploadedVideo.postValue(value);
+                    }
+
+                    @Override
+                    public void onError(Exception error) {
+                        publishing.postValue(false);
+                        errorMessage.postValue(errorMessageFor(error));
+                    }
+                });
+    }
+
+    public void publishUploadedVideo(String videoPath, String coverPath,
+                                     String title, String description, long durationSeconds,
+                                     int videoType, int visibility, String authorization) {
+        if (videoPath == null || videoPath.trim().isEmpty()) {
+            fail("请先上传视频。");
+            return;
+        }
+        if (!isValidVisibility(visibility)) {
+            fail("请选择有效的可见范围。");
+            return;
+        }
+        submit(repository.createVideo(videoPath, coverPath, title, description,
+                durationSeconds, videoType, visibility, authorization, callback()));
+    }
+
     public void publishVideo(String title, String description,
                              ContentRepository.UploadStream video, long durationSeconds,
                              int videoType, int visibility, String authorization) {
@@ -172,13 +221,27 @@ public final class CreateContentViewModel extends ViewModel {
 
     private static String errorMessageFor(Exception error) {
         if (error instanceof ApiException) {
-            String message = error.getMessage();
-            if (message != null && !message.trim().isEmpty()) {
-                return message;
+            ApiException apiError = (ApiException) error;
+            StringBuilder message = new StringBuilder(error.getMessage() == null
+                    ? "" : error.getMessage().trim());
+            for (Map.Entry<String, List<String>> fieldError
+                    : apiError.getFieldErrors().entrySet()) {
+                for (String detail : fieldError.getValue()) {
+                    if (message.length() > 0) {
+                        message.append('\n');
+                    }
+                    message.append(fieldError.getKey()).append(": ").append(detail);
+                }
+            }
+            if (message.length() > 0) {
+                return message.toString();
             }
         }
         if (error instanceof IOException) {
             return "无法连接服务器，请检查网络连接后重试。";
+        }
+        if (error.getMessage() != null && !error.getMessage().trim().isEmpty()) {
+            return "发布失败：" + error.getMessage().trim();
         }
         return "发布失败，请稍后重试。";
     }
