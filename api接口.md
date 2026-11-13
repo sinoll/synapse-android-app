@@ -1,7 +1,5 @@
 # 拾光 RESTful API（`restful/`）
 
-测试地址 `http://192.168.10.10/`
-
 本站的对外数据接口。它和网站共用 `common/` 的模型、同一张 `newhome` 库、同一套 `uploads/`
 目录，所以接口里读到的和网站上看到的是一条内容，不是副本；写进去的东西网站上立刻能改。
 
@@ -10,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 入口 | Apache 虚拟主机文档根 = `restful/web` |
-| 测试地址 | `http://192.168.10.10/` |
+| 测试地址 | `http://192.168.10.10` |
 | URL 形式 | **根相对**，`GET /blog`，不带 `/api/restful` 前缀，也不带 `index.php` |
 | 请求体 | `application/json`（已注册 `JsonParser`），`/upload` 用 `multipart/form-data` |
 | CSRF | 关闭：接口无会话、无 Cookie，不存在 CSRF 面 |
@@ -59,6 +57,7 @@ curl -s -X POST $BASE/upload -H "Authorization: Bearer $TOKEN" \
 | 404 | 不存在、类型对不上（`/blog/13` 指向动态）、无权查看的私密内容，以及**路由里没有的动词**（如 `DELETE /blog`） |
 | 422 | 字段校验失败，明细在 `data.errors` |
 | 429 | 认证接口超过来源 IP 频率限制 |
+| 503 | 验证码邮件发送失败；请稍后重试 |
 | 500 | 服务端异常；`message` 是通用文案，细节只进 `restful/runtime/logs/api.log` |
 
 `YII_DEBUG=true`（`web/index.php`）时错误响应额外带 `debug{type,file,line,trace}`，
@@ -138,8 +137,8 @@ curl -s -X POST $BASE/upload -H "Authorization: Bearer $TOKEN" \
 
 #### 频率限制与邮件配置
 
-* 注册：每个来源 IP 每小时最多 10 次。
-* 登录、找回密码和重置密码：每个来源 IP 每小时最多 20 次；超过限制返回 429。
+* 注册验证码申请、注册提交分别按来源 IP 限流，每个接口每小时最多 10 次。
+* 登录、找回密码、重置密码分别按来源 IP 限流，每个接口每小时最多 20 次；超过限制返回 429。
 * 同一邮箱的同类验证码每 60 秒最多发送一次。
 * 验证码哈希和尝试次数存入现有应用缓存，不创建验证码数据表。多台 API 实例部署时，应配置所有实例共享的缓存后端。
 * 邮件由现有 SMTP 发信器投递。部署时须配置 SMTP 参数。
@@ -148,12 +147,30 @@ curl -s -X POST $BASE/upload -H "Authorization: Bearer $TOKEN" \
 
 四类内容同构：`post` 主表（`type` 区分）+ 一张类型子表。URL 段就是 `post.type`：
 
+### 分类查询
+
+博客发布时可用分类接口查询可选的 `cate_id`。`GET /cate` 和 `GET /cate/{id}` 都是公开只读接口，
+不需要令牌；列表按分类名称升序返回所有分类（包括当前还没有文章的分类），详情不存在时返回 404。
+分类的新增、修改和删除仍在站点管理后台进行，REST API 不提供分类写接口。
+
+```bash
+# 查询可用于发布博客的分类
+curl -sS "$BASE/cate"
+
+# 按 ID 查询一个分类
+curl -sS "$BASE/cate/3"
+```
+
+列表成功时 `data` 的形状为 `{items: [...], total: 分类总数}`；详情的 `data` 直接返回单个分类对象。
+分类字段为 `id`、`name`、`slug`、`description`、`thumb`、`thumb_url`、`created_at` 和 `updated_at`。
+`thumb` 是存储路径，`thumb_url` 是完整 URL；没有封面时两者均为 `null`。列表不分页。
+
 | 资源 | 子表 | 列表 | 详情 | 创建 | 更新 | 删除 | 点赞 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 博客 | `blog` | `GET /blog` | `GET /blog/{id}` | `POST /blog` | `PUT`/`PATCH /blog/{id}` | `DELETE /blog/{id}` | `POST /blog/{id}/like` |
-| 动态 | `moment` | `GET /moment` | ... | `POST /moment` | ... | ... | ... |
-| 图集 | `images`（1:N） | `GET /images` | ... | `POST /images` | ... | ... | ... |
-| 短视频 | `short_video` | `GET /short_video` | ... | `POST /short_video` | ... | ... | ... |
+| 动态 | `moment` | `GET /moment` | `GET /moment/{id}` | `POST /moment` | `PUT`/`PATCH /moment/{id}` | `DELETE /moment/{id}` | `POST /moment/{id}/like` |
+| 图集 | `images`（1:N） | `GET /images` | `GET /images/{id}` | `POST /images` | `PUT`/`PATCH /images/{id}` | `DELETE /images/{id}` | `POST /images/{id}/like` |
+| 短视频 | `short_video` | `GET /short_video` | `GET /short_video/{id}` | `POST /short_video` | `PUT`/`PATCH /short_video/{id}` | `DELETE /short_video/{id}` | `POST /short_video/{id}/like` |
 
 ### 列表查询参数
 
@@ -222,7 +239,13 @@ curl -s -X POST $BASE/upload -H "Authorization: Bearer $TOKEN" \
 
 ### 发布博客
 
-先上传封面图片（`kind=blog`，图片不能超过 10 MB）：
+先调用分类列表，选择目标分类的 `id`；不需要分类时可省略 `cate_id` 或传 `0`：
+
+```bash
+curl -sS "$BASE/cate"
+```
+
+先上传封面图片（`kind=blog`，图片不能超过 20 MB）：
 
 ```bash
 curl -sS -X POST "$BASE/upload" \
@@ -252,7 +275,9 @@ curl -sS -X POST "$BASE/blog" \
 
 `content` 必填；`title`、`summary`、`thumb`、`cate_id`、`tags`、`status` 和 `visibility` 可按需提交。
 省略 `title` 时由正文生成标题；省略 `thumb` 时会尝试从正文第一张本站博客/动态插图生成封面。
-`cate_id` 使用现有分类 ID，`0` 表示不挂分类。发布成功返回 `data.id`，可用 `GET /blog/{id}` 查看完整正文。
+`cate_id` 使用 `GET /cate` 返回的现有分类 ID，必须是非负整数；`0` 表示不挂分类，省略时也不挂分类。
+不存在的分类 ID、负数或非整数会返回 422，不会静默发布成无分类文章。发布成功返回 `data.id`，
+可用 `GET /blog/{id}` 查看完整正文。
 
 ### 发布动态
 
@@ -284,7 +309,7 @@ curl -sS -X POST "$BASE/moment" \
 
 ### 发布图集
 
-先对每张图片分别调用 `POST /upload`，使用 `kind=images`，每张不超过 10 MB。把每次上传响应里的 `data.path`
+先对每张图片分别调用 `POST /upload`，使用 `kind=images`，每张不超过 20 MB。把每次上传响应里的 `data.path`
 按展示顺序放入 `file_paths`：
 
 ```bash
@@ -320,7 +345,7 @@ curl -sS -X POST "$BASE/images" \
 
 ### 发布短视频
 
-上传视频（`kind=video`，最大 500 MB；服务器须能调用 FFmpeg 验证并抽帧）：
+上传视频（`kind=video`，文件大小由服务器 PHP 的 `upload_max_filesize` 与 `post_max_size` 配置决定；服务器须能调用 FFmpeg 验证并抽帧）：
 
 ```bash
 curl -sS -X POST "$BASE/upload" \
@@ -443,11 +468,11 @@ curl -sS -X PATCH "$BASE/blog/123" \
 
 | `kind` | 落盘目录 | 单文件上限 | 扩展名 | 附带生成 |
 | --- | --- | --- | --- | --- |
-| `blog` | `/uploads/blog/YYYYMM/` | 10 MB | jpg/jpeg/png/gif/webp | `/uploads/thumb/blog/` 640px 缩略图 |
-| `moment` | `/uploads/moment/YYYYMM/` | 10 MB | 同上 | `/uploads/thumb/moment/` |
-| `images` | `/uploads/images/YYYYMM/` | 10 MB | 同上 | `/uploads/thumb/images/` |
-| `cate` | `/uploads/thumb/cate/`（平铺） | 5 MB | 同上 | — |
-| `video` | `/uploads/video/YYYYMM/` | 500 MB | mp4/webm/mov/ogv/ogg | `/uploads/thumb/video/` 第 5 帧抽图 |
+| `blog` | `/uploads/blog/YYYYMM/` | 20 MB | jpg/jpeg/png/gif/webp | `/uploads/thumb/blog/` 640px 缩略图 |
+| `moment` | `/uploads/moment/YYYYMM/` | 20 MB | 同上 | `/uploads/thumb/moment/` |
+| `images` | `/uploads/images/YYYYMM/` | 20 MB | 同上 | `/uploads/thumb/images/` |
+| `cate` | `/uploads/thumb/cate/`（平铺） | 20 MB | 同上 | — |
+| `video` | `/uploads/video/YYYYMM/` | 由服务器 PHP 配置决定 | mp4/webm/mov/ogv/ogg | `/uploads/thumb/video/` 第 5 帧抽图 |
 
 返回 `{kind, path, url, size, thumbnail_path, thumbnail_url}`。缩略图或抽帧失败不影响上传成功，
 改为在 `warning` 里说明；此时把 `path` 交给内容接口即可（详情会按无缩略图降级渲染）。
@@ -470,15 +495,3 @@ curl -sS -X PATCH "$BASE/blog/123" \
 * 无状态令牌做不到「单独吊销某一台设备」。需要这个能力就在 `ApiToken::verify()` 里加一层 jti 黑名单。
 * RESTful 注册验证和找回密码使用 API 自己的一次性邮件验证码；前台注册/重置密码的邮件链接流程保持不变。
 * 认证接口有来源 IP 和邮箱级频率限制；生产环境应使用可供前端与 RESTful 应用共享的缓存服务，避免多进程分别计数。
-
-
-
-
-## 自检脚本
-
-```powershell
-powershell -ExecutionPolicy Bypass -File restful/test_api.ps1
-```
-
-跑之前把脚本顶部的 `$baseUrl` 改成自己的地址；登录那一步会交互式要用户名密码（脚本里不留口令），
-没有账户时可以先只跑读接口部分。

@@ -46,6 +46,30 @@
         android:id="@+id/action_global_content_detail"
         app:destination="@id/content_detail" />
 
+    <action
+        android:id="@+id/action_global_create_content"
+        app:destination="@id/create_content" />
+
+    <action
+        android:id="@+id/action_global_create_video"
+        app:destination="@id/create_video" />
+
+    <fragment
+        android:id="@+id/create_video"
+        android:name="com.sinoll.synapse_app.ui.content.CreateVideoFragment"
+        android:label="@string/video_publish_title"
+        tools:layout="@layout/fragment_create_video" />
+
+    <fragment
+        android:id="@+id/create_content"
+        android:name="com.sinoll.synapse_app.ui.content.CreateContentFragment"
+        android:label="@string/content_create_description"
+        tools:layout="@layout/fragment_create_content">
+        <argument
+            android:name="content_type"
+            app:argType="string" />
+    </fragment>
+
     <fragment
         android:id="@+id/my_content"
         android:name="com.sinoll.synapse_app.ui.profile.MyContentFragment"

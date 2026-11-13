@@ -17,6 +17,7 @@ public final class ApiClient {
 
     private static final int CONNECT_TIMEOUT_MILLIS = 15000;
     private static final int READ_TIMEOUT_MILLIS = 30000;
+    private static final int UPLOAD_READ_TIMEOUT_MILLIS = 180000;
     private static final int MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
     private final String baseUrl;
@@ -68,6 +69,108 @@ public final class ApiClient {
             throw new IllegalArgumentException("POST body must not be null.");
         }
         return request("POST", path, null, body, authorization);
+    }
+
+    public JSONObject upload(String kind, String fileName, String mimeType, byte[] content,
+                             String authorization) throws IOException, ApiException {
+        requireConfiguration();
+        if (kind == null || kind.trim().isEmpty()
+                || fileName == null || fileName.trim().isEmpty()
+                || content == null || content.length == 0) {
+            throw new IllegalArgumentException(
+                    "Upload kind, file name, and content are required.");
+        }
+        HttpURLConnection connection = null;
+        try {
+            String boundary = "----SynapseBoundary" + Long.toHexString(System.nanoTime());
+            String resolvedMimeType = mimeType == null || mimeType.trim().isEmpty()
+                    ? "application/octet-stream" : mimeType.trim();
+            byte[] body = buildMultipartBody(boundary, kind.trim(), fileName.trim(),
+                    resolvedMimeType, content);
+            URL url = new URL(buildUrl("upload", null));
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(CONNECT_TIMEOUT_MILLIS);
+            connection.setReadTimeout(UPLOAD_READ_TIMEOUT_MILLIS);
+            connection.setInstanceFollowRedirects(false);
+            connection.setDoOutput(true);
+            connection.setFixedLengthStreamingMode(body.length);
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type",
+                    "multipart/form-data; boundary=" + boundary);
+            if (authorization != null && !authorization.trim().isEmpty()) {
+                connection.setRequestProperty("Authorization", authorization);
+            }
+            try (java.io.OutputStream output = connection.getOutputStream()) {
+                output.write(body);
+            }
+
+            int status = connection.getResponseCode();
+            InputStream responseStream = status >= 200 && status < 300
+                    ? connection.getInputStream() : connection.getErrorStream();
+            JSONObject responseBody = parseBody(readResponse(responseStream, status), status);
+            return ApiEnvelope.requireData(status, responseBody);
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    public JSONObject upload(String kind, String fileName, String mimeType,
+                             InputStream content, long contentLength, String authorization)
+            throws IOException, ApiException {
+        requireConfiguration();
+        if (kind == null || kind.trim().isEmpty()
+                || fileName == null || fileName.trim().isEmpty()
+                || content == null || contentLength == 0 || contentLength < -1) {
+            throw new IllegalArgumentException(
+                    "Upload kind, file name, and content are required.");
+        }
+        HttpURLConnection connection = null;
+        try {
+            String boundary = "----SynapseBoundary" + Long.toHexString(System.nanoTime());
+            String resolvedMimeType = mimeType == null || mimeType.trim().isEmpty()
+                    ? "application/octet-stream" : mimeType.trim();
+            byte[] prefix = buildMultipartPrefix(boundary, kind.trim(), fileName.trim(),
+                    resolvedMimeType);
+            byte[] suffix = buildMultipartSuffix(boundary);
+            URL url = new URL(buildUrl("upload", null));
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(CONNECT_TIMEOUT_MILLIS);
+            connection.setReadTimeout(UPLOAD_READ_TIMEOUT_MILLIS);
+            connection.setInstanceFollowRedirects(false);
+            connection.setDoOutput(true);
+            if (contentLength >= 0) {
+                connection.setFixedLengthStreamingMode(
+                        prefix.length + contentLength + suffix.length);
+            } else {
+                connection.setChunkedStreamingMode(8192);
+            }
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type",
+                    "multipart/form-data; boundary=" + boundary);
+            if (authorization != null && !authorization.trim().isEmpty()) {
+                connection.setRequestProperty("Authorization", authorization);
+            }
+            try (InputStream input = content;
+                 java.io.OutputStream output = connection.getOutputStream()) {
+                output.write(prefix);
+                copy(input, output);
+                output.write(suffix);
+            }
+
+            int status = connection.getResponseCode();
+            InputStream responseStream = status >= 200 && status < 300
+                    ? connection.getInputStream() : connection.getErrorStream();
+            JSONObject responseBody = parseBody(readResponse(responseStream, status), status);
+            return ApiEnvelope.requireData(status, responseBody);
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
     }
 
     private JSONObject request(String method, String path, String query, JSONObject body,
@@ -200,6 +303,50 @@ public final class ApiClient {
         } catch (URISyntaxException error) {
             throw new IllegalArgumentException("API 地址格式无效。", error);
         }
+    }
+
+    private static byte[] buildMultipartBody(String boundary, String kind, String fileName,
+                                             String mimeType, byte[] content) throws IOException {
+        byte[] prefix = buildMultipartPrefix(boundary, kind, fileName, mimeType);
+        byte[] suffix = buildMultipartSuffix(boundary);
+        ByteArrayOutputStream output =
+                new ByteArrayOutputStream(prefix.length + content.length + suffix.length);
+        output.write(prefix);
+        output.write(content);
+        output.write(suffix);
+        return output.toByteArray();
+    }
+
+    private static byte[] buildMultipartPrefix(String boundary, String kind, String fileName,
+                                               String mimeType) throws IOException {
+        String safeName = fileName.replace("\"", "_").replace("\r", "").replace("\n", "");
+        ByteArrayOutputStream output = new ByteArrayOutputStream(512);
+        writeUtf8(output, "--" + boundary + "\r\n");
+        writeUtf8(output, "Content-Disposition: form-data; name=\"kind\"\r\n\r\n");
+        writeUtf8(output, kind + "\r\n");
+        writeUtf8(output, "--" + boundary + "\r\n");
+        writeUtf8(output, "Content-Disposition: form-data; name=\"file\"; filename=\""
+                + safeName + "\"\r\n");
+        writeUtf8(output, "Content-Type: " + mimeType + "\r\n\r\n");
+        return output.toByteArray();
+    }
+
+    private static byte[] buildMultipartSuffix(String boundary) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream(64);
+        writeUtf8(output, "\r\n--" + boundary + "--\r\n");
+        return output.toByteArray();
+    }
+
+    private static void copy(InputStream input, java.io.OutputStream output) throws IOException {
+        byte[] buffer = new byte[8192];
+        int count;
+        while ((count = input.read(buffer)) != -1) {
+            output.write(buffer, 0, count);
+        }
+    }
+
+    private static void writeUtf8(ByteArrayOutputStream output, String value) throws IOException {
+        output.write(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     private static byte[] readResponse(InputStream input, int httpStatus)

@@ -392,10 +392,12 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
 
         private void updateVideoInfoLayout() {
             boolean compact = fullscreenMode && !verticalVideo;
+            // Keep the centered publish button clear of the video info text.
+            int reservedBottom = compact ? 0 : dp((ViewGroup) itemView, 64);
             infoPanel.setPadding(dp((ViewGroup) itemView, compact ? 16 : 22),
                     dp((ViewGroup) itemView, compact ? 6 : 16),
                     dp((ViewGroup) itemView, compact ? 16 : 22),
-                    dp((ViewGroup) itemView, compact ? 6 : 28));
+                    dp((ViewGroup) itemView, compact ? 6 : 28) + reservedBottom);
             title.setTextSize(compact ? 16 : 21);
             title.setMaxLines(compact ? 1 : Integer.MAX_VALUE);
             description.setVisibility(compact ? View.GONE : View.VISIBLE);
@@ -409,7 +411,8 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
                     (FrameLayout.LayoutParams) infoScrim.getLayoutParams();
             scrimParams.height = compact
                     ? dp((ViewGroup) itemView, 72)
-                    : itemView.getResources().getDimensionPixelSize(R.dimen.video_info_height);
+                    : itemView.getResources().getDimensionPixelSize(R.dimen.video_info_height)
+                            + reservedBottom;
             infoScrim.setLayoutParams(scrimParams);
         }
 

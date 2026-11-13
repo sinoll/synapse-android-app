@@ -8,6 +8,11 @@
     <color name="text_primary">#27243A</color>
     <color name="text_secondary">#777487</color>
     <color name="video_overlay">#990B0B12</color>
+    <color name="video_surface">#0B0B12</color>
+    <color name="video_preview_surface">#1A1A22</color>
+    <color name="video_preview_stroke">#33FFFFFF</color>
+    <color name="video_create_button">#B36C5CE7</color>
+    <color name="video_publish_button">#CC6C5CE7</color>
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>
     <color name="purple_700">#FF3700B3</color>

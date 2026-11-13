@@ -9,6 +9,7 @@ import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -23,6 +24,7 @@ import com.google.android.material.snackbar.Snackbar;
 import com.sinoll.synapse_app.R;
 import com.sinoll.synapse_app.data.model.ContentItem;
 import com.sinoll.synapse_app.data.model.ContentType;
+import com.sinoll.synapse_app.data.session.SessionStore;
 import com.sinoll.synapse_app.ui.profile.MyContentFragment;
 
 public abstract class ContentListFragment extends Fragment {
@@ -81,6 +83,12 @@ public abstract class ContentListFragment extends Fragment {
         refreshLayout.setOnRefreshListener(this::searchContent);
         searchButton.setOnClickListener(ignored ->
                 searchContent());
+        View createButton = view.findViewById(R.id.content_create);
+        if (isOwnerContent()) {
+            createButton.setVisibility(View.GONE);
+        } else {
+            createButton.setOnClickListener(ignored -> openCreate());
+        }
         searchInput.setOnEditorActionListener((textView, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
                 searchContent();
@@ -104,8 +112,12 @@ public abstract class ContentListFragment extends Fragment {
         });
 
         observeViewModel(view);
+        getParentFragmentManager().setFragmentResultListener(
+                CreateContentFragment.RESULT_CONTENT_CREATED, getViewLifecycleOwner(),
+                (key, result) -> viewModel.loadFirstPage(
+                        searchInput.getText().toString()));
         try {
-            String authorization = new com.sinoll.synapse_app.data.session.SessionStore(
+            String authorization = new SessionStore(
                     requireContext()).getAuthorizationHeader();
             Integer ownerId = isOwnerContent() && getArguments() != null
                     ? getArguments().getInt(MyContentFragment.ARG_USER_ID, 0) : null;
@@ -121,6 +133,26 @@ public abstract class ContentListFragment extends Fragment {
 
     private void searchContent() {
         viewModel.loadFirstPage(searchInput.getText().toString());
+    }
+
+    private void openCreate() {
+        String authorization = null;
+        try {
+            authorization = new SessionStore(requireContext()).getAuthorizationHeader();
+        } catch (Exception error) {
+            // A broken local session is treated as logged out.
+        }
+        if (authorization == null) {
+            Toast.makeText(requireContext(), R.string.content_create_login_required,
+                    Toast.LENGTH_SHORT).show();
+            Navigation.findNavController(requireView()).navigate(R.id.navigation_profile);
+            return;
+        }
+        Bundle arguments = new Bundle();
+        arguments.putString(CreateContentFragment.ARG_CONTENT_TYPE,
+                initialContentType().getEndpoint());
+        Navigation.findNavController(requireView())
+                .navigate(R.id.action_global_create_content, arguments);
     }
 
     private void observeViewModel(View root) {

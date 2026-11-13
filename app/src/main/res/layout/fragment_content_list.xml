@@ -40,10 +40,10 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
         android:layout_marginTop="20dp"
-        android:layout_marginEnd="16dp"
+        android:layout_marginEnd="8dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/content_create"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/content_subheading">
 
@@ -70,6 +70,19 @@
             android:layout_marginStart="8dp"
             android:text="@string/content_search" />
     </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/content_create"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginEnd="16dp"
+        android:background="@drawable/bg_create_button"
+        android:contentDescription="@string/content_create_description"
+        android:padding="12dp"
+        android:src="@drawable/ic_add"
+        app:layout_constraintBottom_toBottomOf="@id/content_search_row"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@id/content_search_row" />
 
     <FrameLayout
         android:id="@+id/content_list_container"
