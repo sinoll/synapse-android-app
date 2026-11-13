@@ -44,16 +44,36 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
     }
 
     public void submitItems(List<ContentItem> values) {
-        if (values.size() < items.size()) {
-            items.clear();
-            notifyDataSetChanged();
-        }
-        if (values.size() == items.size()) {
+        if (values == null) {
             return;
         }
-        int first = items.size();
-        items.addAll(values.subList(first, values.size()));
-        notifyItemRangeInserted(first, items.size() - first);
+        if (isPrefixOf(values)) {
+            if (values.size() == items.size()) {
+                return;
+            }
+            int first = items.size();
+            items.addAll(values.subList(first, values.size()));
+            notifyItemRangeInserted(first, items.size() - first);
+            return;
+        }
+        items.clear();
+        items.addAll(values);
+        notifyDataSetChanged();
+    }
+
+    private boolean isPrefixOf(List<ContentItem> values) {
+        if (values.size() < items.size()) {
+            return false;
+        }
+        for (int i = 0; i < items.size(); i++) {
+            ContentItem existing = items.get(i);
+            ContentItem incoming = values.get(i);
+            if (existing.getId() != incoming.getId()
+                    || !existing.getType().equals(incoming.getType())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @NonNull

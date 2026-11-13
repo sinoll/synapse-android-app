@@ -1,16 +1,13 @@
 package com.sinoll.synapse_app.data.repository;
 
 import com.sinoll.synapse_app.data.api.ApiClient;
-import com.sinoll.synapse_app.data.api.ApiException;
 import com.sinoll.synapse_app.data.model.ContentItem;
 import com.sinoll.synapse_app.data.model.ContentPage;
 import com.sinoll.synapse_app.data.model.ContentQuery;
 import com.sinoll.synapse_app.data.model.ContentType;
 
-import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -35,7 +32,7 @@ public final class ContentRepository implements AutoCloseable {
             try {
                 JSONObject data = apiClient.get(type.getEndpoint(), query.toQueryString(), authorization);
                 callback.onSuccess(ContentPage.fromJson(data, query));
-            } catch (ApiException | IOException | JSONException error) {
+            } catch (Exception error) {
                 callback.onError(error);
             }
         });
@@ -50,7 +47,7 @@ public final class ContentRepository implements AutoCloseable {
             try {
                 JSONObject data = apiClient.get(type.getEndpoint() + "/" + id, "", authorization);
                 callback.onSuccess(ContentItem.fromJson(data));
-            } catch (ApiException | IOException | JSONException error) {
+            } catch (Exception error) {
                 callback.onError(error);
             }
         });

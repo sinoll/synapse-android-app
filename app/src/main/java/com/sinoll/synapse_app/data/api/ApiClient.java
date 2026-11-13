@@ -18,9 +18,9 @@ public final class ApiClient {
     private static final int CONNECT_TIMEOUT_MILLIS = 15000;
     private static final int READ_TIMEOUT_MILLIS = 30000;
     private static final int MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
-    private static final String DEVELOPMENT_HTTP_HOST = "192.168.8.10";
 
     private final String baseUrl;
+    private final String configurationError;
     private final boolean allowsDevelopmentHttp;
 
     public ApiClient(String baseUrl) {
@@ -30,12 +30,31 @@ public final class ApiClient {
     private ApiClient(String baseUrl, boolean allowsDevelopmentHttp) {
         this.allowsDevelopmentHttp = allowsDevelopmentHttp;
         this.baseUrl = normalizeBaseUrl(baseUrl, allowsDevelopmentHttp);
+        this.configurationError = null;
+    }
+
+    private ApiClient(IllegalArgumentException error) {
+        this.allowsDevelopmentHttp = false;
+        this.baseUrl = null;
+        this.configurationError = error.getMessage() == null
+                ? "API 地址配置无效。" : error.getMessage();
     }
 
     public static ApiClient forApplication() {
-        boolean allowsDevelopmentHttp = BuildConfig.DEBUG
-                && "development".equals(BuildConfig.FLAVOR);
-        return new ApiClient(BuildConfig.API_BASE_URL, allowsDevelopmentHttp);
+        // Development builds talk to a plain HTTP test server. The network security
+        // config still restricts cleartext traffic to the configured dev host.
+        boolean allowsDevelopmentHttp = "development".equals(BuildConfig.FLAVOR);
+        return createForApplication(BuildConfig.API_BASE_URL, allowsDevelopmentHttp);
+    }
+
+    static ApiClient createForApplication(String baseUrl, boolean allowsDevelopmentHttp) {
+        try {
+            return new ApiClient(baseUrl, allowsDevelopmentHttp);
+        } catch (IllegalArgumentException error) {
+            // A bad BuildConfig must not crash the app on startup or when a screen
+            // is opened. Keep the error and surface it through the request API.
+            return new ApiClient(error);
+        }
     }
 
     public JSONObject get(String path, String query, String authorization)
@@ -53,6 +72,7 @@ public final class ApiClient {
 
     private JSONObject request(String method, String path, String query, JSONObject body,
                                String authorization) throws IOException, ApiException {
+        requireConfiguration();
         HttpURLConnection connection = null;
         try {
             URL url = new URL(buildUrl(path, query));
@@ -88,7 +108,7 @@ public final class ApiClient {
     }
 
     public String resolveMediaUrl(String value) {
-        if (value == null || value.trim().isEmpty()) {
+        if (configurationError != null || value == null || value.trim().isEmpty()) {
             return null;
         }
         try {
@@ -146,33 +166,39 @@ public final class ApiClient {
                     || !baseUri.getRawAuthority().equals(uri.getRawAuthority())
                     || !uri.getRawPath().startsWith(baseUri.getRawPath())
                     || uri.getRawFragment() != null || uri.getUserInfo() != null) {
-                throw new IllegalArgumentException("API requests must use the configured HTTPS host.");
+                throw new IllegalArgumentException("API 请求地址与配置的服务器不一致。");
             }
             return uri.toASCIIString();
         } catch (URISyntaxException error) {
-            throw new IllegalArgumentException("Invalid API request URL.", error);
+            throw new IllegalArgumentException("API 请求地址无效。", error);
+        }
+    }
+
+    private void requireConfiguration() throws ApiException {
+        if (configurationError != null) {
+            throw new ApiException(configurationError, 0, 0,
+                    java.util.Collections.<String, java.util.List<String>>emptyMap());
         }
     }
 
     private static String normalizeBaseUrl(String value, boolean allowDevelopmentHttp) {
         if (value == null || value.trim().isEmpty()) {
-            throw new IllegalArgumentException("API base URL must not be empty.");
+            throw new IllegalArgumentException("API 地址未配置。");
         }
         try {
             URI uri = new URI(value.trim());
             boolean isHttps = "https".equalsIgnoreCase(uri.getScheme());
             boolean isAllowedDevelopmentHttp = allowDevelopmentHttp
-                    && "http".equalsIgnoreCase(uri.getScheme())
-                    && DEVELOPMENT_HTTP_HOST.equals(uri.getHost());
+                    && "http".equalsIgnoreCase(uri.getScheme());
             if ((!isHttps && !isAllowedDevelopmentHttp) || uri.getHost() == null
                     || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null) {
                 throw new IllegalArgumentException(
-                        "API base URL must use HTTPS, except for the development debug server.");
+                        "API 地址必须使用 HTTPS（development 环境可使用 HTTP）。");
             }
             String normalized = uri.toASCIIString();
             return normalized.endsWith("/") ? normalized : normalized + "/";
         } catch (URISyntaxException error) {
-            throw new IllegalArgumentException("API base URL must be a valid HTTPS URL.", error);
+            throw new IllegalArgumentException("API 地址格式无效。", error);
         }
     }
 

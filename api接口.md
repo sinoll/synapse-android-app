@@ -1,6 +1,6 @@
 # 拾光 RESTful API（`restful/`）
 
-测试地址 `http://192.168.8.10/`
+测试地址 `http://192.168.10.10/`
 
 本站的对外数据接口。它和网站共用 `common/` 的模型、同一张 `newhome` 库、同一套 `uploads/`
 目录，所以接口里读到的和网站上看到的是一条内容，不是副本；写进去的东西网站上立刻能改。
@@ -10,7 +10,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 入口 | Apache 虚拟主机文档根 = `restful/web` |
-| 测试地址 | `http://192.168.8.10/` |
+| 测试地址 | `http://192.168.10.10/` |
 | URL 形式 | **根相对**，`GET /blog`，不带 `/api/restful` 前缀，也不带 `index.php` |
 | 请求体 | `application/json`（已注册 `JsonParser`），`/upload` 用 `multipart/form-data` |
 | CSRF | 关闭：接口无会话、无 Cookie，不存在 CSRF 面 |
@@ -20,7 +20,7 @@
 ## 快速上手
 
 ```bash
-BASE=http://192.168.8.10
+BASE=http://192.168.10.10
 
 # 1. 看接口清单（不需要令牌）
 curl -s $BASE/

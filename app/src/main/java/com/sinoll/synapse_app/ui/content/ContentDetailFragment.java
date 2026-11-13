@@ -19,6 +19,7 @@ import com.google.android.material.snackbar.Snackbar;
 import com.sinoll.synapse_app.R;
 import com.sinoll.synapse_app.data.model.ContentItem;
 import com.sinoll.synapse_app.data.model.ContentType;
+import com.sinoll.synapse_app.data.session.SessionStore;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -74,7 +75,13 @@ public final class ContentDetailFragment extends Fragment {
             showState(getString(R.string.content_invalid_reference));
             return;
         }
-        viewModel.load(type, id);
+        String authorization = null;
+        try {
+            authorization = new SessionStore(requireContext()).getAuthorizationHeader();
+        } catch (Exception error) {
+            // Public content can still be loaded without a session.
+        }
+        viewModel.load(type, id, authorization);
     }
 
     private void showItem(ContentItem item) {

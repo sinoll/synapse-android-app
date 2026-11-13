@@ -37,11 +37,12 @@ public final class ContentDetailViewModel extends ViewModel {
         return errorMessage;
     }
 
-    public void load(ContentType type, int id) {
+    public void load(ContentType type, int id, String authorization) {
         if (type == null || id <= 0) {
             throw new IllegalArgumentException("A content type and positive id are required.");
         }
-        String key = type.getEndpoint() + ":" + id;
+        String key = type.getEndpoint() + ":" + id + ":"
+                + (authorization == null || authorization.trim().isEmpty() ? "guest" : "user");
         if (key.equals(loadedKey)) {
             return;
         }
@@ -52,7 +53,7 @@ public final class ContentDetailViewModel extends ViewModel {
         }
         loading.setValue(true);
         errorMessage.setValue(null);
-        activeRequest = repository.loadDetail(type, id, null,
+        activeRequest = repository.loadDetail(type, id, authorization,
                 new ContentRepository.Callback<ContentItem>() {
                     @Override
                     public void onSuccess(ContentItem result) {
