@@ -185,6 +185,9 @@ public final class ApiClient {
             connection.setReadTimeout(READ_TIMEOUT_MILLIS);
             connection.setInstanceFollowRedirects(false);
             connection.setRequestProperty("Accept", "application/json");
+            if (authorization != null && !authorization.trim().isEmpty()) {
+                connection.setRequestProperty("Authorization", authorization);
+            }
             if (body != null) {
                 connection.setDoOutput(true);
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
@@ -193,9 +196,6 @@ public final class ApiClient {
                 try (java.io.OutputStream output = connection.getOutputStream()) {
                     output.write(requestBody);
                 }
-            }
-            if (authorization != null && !authorization.trim().isEmpty()) {
-                connection.setRequestProperty("Authorization", authorization);
             }
 
             int status = connection.getResponseCode();
