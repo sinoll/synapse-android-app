@@ -25,6 +25,14 @@ public class ApiClientTest {
     }
 
     @Test
+    public void imageUploadsUseArrayFileFieldAndVideoUploadsUseSingleFileField() {
+        assertEquals("file[]", ApiClient.multipartFileFieldName("blog"));
+        assertEquals("file[]", ApiClient.multipartFileFieldName("moment"));
+        assertEquals("file[]", ApiClient.multipartFileFieldName("images"));
+        assertEquals("file", ApiClient.multipartFileFieldName("video"));
+    }
+
+    @Test
     public void developmentMediaUrlUsesConfiguredApiHost() {
         assertEquals("http://192.168.10.10/uploads/thumb/blog/cover.jpg",
                 developmentClient().resolveMediaUrl(

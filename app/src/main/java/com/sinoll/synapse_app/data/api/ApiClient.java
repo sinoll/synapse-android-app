@@ -320,15 +320,22 @@ public final class ApiClient {
     private static byte[] buildMultipartPrefix(String boundary, String kind, String fileName,
                                                String mimeType) throws IOException {
         String safeName = fileName.replace("\"", "_").replace("\r", "").replace("\n", "");
+        String fileFieldName = multipartFileFieldName(kind);
         ByteArrayOutputStream output = new ByteArrayOutputStream(512);
         writeUtf8(output, "--" + boundary + "\r\n");
         writeUtf8(output, "Content-Disposition: form-data; name=\"kind\"\r\n\r\n");
         writeUtf8(output, kind + "\r\n");
         writeUtf8(output, "--" + boundary + "\r\n");
-        writeUtf8(output, "Content-Disposition: form-data; name=\"file\"; filename=\""
+        writeUtf8(output, "Content-Disposition: form-data; name=\"" + fileFieldName
+                + "\"; filename=\""
                 + safeName + "\"\r\n");
         writeUtf8(output, "Content-Type: " + mimeType + "\r\n\r\n");
         return output.toByteArray();
+    }
+
+    static String multipartFileFieldName(String kind) {
+        return "blog".equals(kind) || "moment".equals(kind) || "images".equals(kind)
+                ? "file[]" : "file";
     }
 
     private static byte[] buildMultipartSuffix(String boundary) throws IOException {

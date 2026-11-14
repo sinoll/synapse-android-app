@@ -5,11 +5,7 @@ import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.inputmethod.EditorInfo;
-import android.widget.Button;
-import android.widget.EditText;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -33,7 +29,6 @@ public abstract class ContentListFragment extends Fragment {
     private ContentListAdapter adapter;
     private SwipeRefreshLayout refreshLayout;
     private TextView stateText;
-    private EditText searchInput;
     private RecyclerView recyclerView;
 
     protected abstract ContentType initialContentType();
@@ -66,7 +61,6 @@ public abstract class ContentListFragment extends Fragment {
         viewModel = new ViewModelProvider(this).get(ContentListViewModel.class);
         refreshLayout = view.findViewById(R.id.content_refresh);
         stateText = view.findViewById(R.id.content_state);
-        searchInput = view.findViewById(R.id.content_search);
         recyclerView = view.findViewById(R.id.content_list);
         TextView heading = view.findViewById(R.id.content_heading);
         TextView subheading = view.findViewById(R.id.content_subheading);
@@ -76,26 +70,10 @@ public abstract class ContentListFragment extends Fragment {
             heading.setVisibility(View.GONE);
             subheading.setVisibility(View.GONE);
         }
-        Button searchButton = view.findViewById(R.id.content_search_button);
         adapter = new ContentListAdapter(this::openDetail);
         recyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
         recyclerView.setAdapter(adapter);
-        refreshLayout.setOnRefreshListener(this::searchContent);
-        searchButton.setOnClickListener(ignored ->
-                searchContent());
-        View createButton = view.findViewById(R.id.content_create);
-        if (isOwnerContent()) {
-            createButton.setVisibility(View.GONE);
-        } else {
-            createButton.setOnClickListener(ignored -> openCreate());
-        }
-        searchInput.setOnEditorActionListener((textView, actionId, event) -> {
-            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
-                searchContent();
-                return true;
-            }
-            return false;
-        });
+        refreshLayout.setOnRefreshListener(() -> viewModel.loadFirstPage(""));
         recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView list, int dx, int dy) {
@@ -114,8 +92,7 @@ public abstract class ContentListFragment extends Fragment {
         observeViewModel(view);
         getParentFragmentManager().setFragmentResultListener(
                 CreateContentFragment.RESULT_CONTENT_CREATED, getViewLifecycleOwner(),
-                (key, result) -> viewModel.loadFirstPage(
-                        searchInput.getText().toString()));
+                (key, result) -> viewModel.loadFirstPage(""));
         try {
             String authorization = new SessionStore(
                     requireContext()).getAuthorizationHeader();
@@ -129,30 +106,6 @@ public abstract class ContentListFragment extends Fragment {
             }
         }
         viewModel.setContentType(initialContentType());
-    }
-
-    private void searchContent() {
-        viewModel.loadFirstPage(searchInput.getText().toString());
-    }
-
-    private void openCreate() {
-        String authorization = null;
-        try {
-            authorization = new SessionStore(requireContext()).getAuthorizationHeader();
-        } catch (Exception error) {
-            // A broken local session is treated as logged out.
-        }
-        if (authorization == null) {
-            Toast.makeText(requireContext(), R.string.content_create_login_required,
-                    Toast.LENGTH_SHORT).show();
-            Navigation.findNavController(requireView()).navigate(R.id.navigation_profile);
-            return;
-        }
-        Bundle arguments = new Bundle();
-        arguments.putString(CreateContentFragment.ARG_CONTENT_TYPE,
-                initialContentType().getEndpoint());
-        Navigation.findNavController(requireView())
-                .navigate(R.id.action_global_create_content, arguments);
     }
 
     private void observeViewModel(View root) {

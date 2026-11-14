@@ -19,7 +19,7 @@ import java.util.concurrent.Executors;
 
 public final class RemoteImageLoader {
 
-    private static final int MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+    private static final int MAX_IMAGE_BYTES = 20 * 1024 * 1024;
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(3);
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final ApiClient API_CLIENT = ApiClient.forApplication();
@@ -42,28 +42,19 @@ public final class RemoteImageLoader {
             return;
         }
 
-        EXECUTOR.execute(() -> {
-            Bitmap bitmap;
-            try {
-                bitmap = download(resolved, imageView.getWidth(), imageView.getHeight());
-            } catch (IOException error) {
-                bitmap = null;
-            }
-            Bitmap result = bitmap;
-            MAIN.post(() -> {
-                if (resolved.equals(imageView.getTag(R.id.remote_image_url))) {
-                    if (result != null) {
-                        imageView.setImageBitmap(result);
-                        imageView.setVisibility(ImageView.VISIBLE);
-                    } else if (fallbackResource != 0) {
-                        imageView.setImageResource(fallbackResource);
-                        imageView.setVisibility(ImageView.VISIBLE);
-                    } else {
-                        imageView.setImageDrawable(null);
-                        imageView.setVisibility(ImageView.GONE);
-                    }
+        loadBitmap(resolved, imageView.getWidth(), imageView.getHeight(), bitmap -> {
+            if (resolved.equals(imageView.getTag(R.id.remote_image_url))) {
+                if (bitmap != null) {
+                    imageView.setImageBitmap(bitmap);
+                    imageView.setVisibility(ImageView.VISIBLE);
+                } else if (fallbackResource != 0) {
+                    imageView.setImageResource(fallbackResource);
+                    imageView.setVisibility(ImageView.VISIBLE);
+                } else {
+                    imageView.setImageDrawable(null);
+                    imageView.setVisibility(ImageView.GONE);
                 }
-            });
+            }
         });
     }
 
@@ -71,6 +62,19 @@ public final class RemoteImageLoader {
         imageView.setTag(R.id.remote_image_url, null);
         imageView.setImageDrawable(null);
         imageView.setVisibility(ImageView.GONE);
+    }
+
+    private static void loadBitmap(String url, int width, int height, BitmapCallback callback) {
+        EXECUTOR.execute(() -> {
+            Bitmap bitmap;
+            try {
+                bitmap = download(url, width, height);
+            } catch (IOException error) {
+                bitmap = null;
+            }
+            Bitmap result = bitmap;
+            MAIN.post(() -> callback.onLoaded(result));
+        });
     }
 
     private static Bitmap download(String url, int width, int height) throws IOException {
@@ -131,5 +135,9 @@ public final class RemoteImageLoader {
             sample *= 2;
         }
         return sample;
+    }
+
+    private interface BitmapCallback {
+        void onLoaded(Bitmap bitmap);
     }
 }

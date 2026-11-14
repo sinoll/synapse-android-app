@@ -13,8 +13,10 @@ import androidx.navigation.Navigation;
 import androidx.navigation.ui.NavigationUI;
 
 import com.sinoll.synapse_app.R;
+import com.sinoll.synapse_app.data.model.ContentType;
 import com.sinoll.synapse_app.data.session.SessionStore;
 import com.sinoll.synapse_app.databinding.ActivityMainBinding;
+import com.sinoll.synapse_app.ui.content.CreateContentFragment;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -37,15 +39,12 @@ public class MainActivity extends AppCompatActivity {
                 Navigation.findNavController(this, R.id.nav_host_fragment_activity_main);
         NavigationUI.setupWithNavController(binding.navView, navController);
         navController.addOnDestinationChangedListener((controller, destination, arguments) -> {
-            int icon = destination.getId() == R.id.navigation_video
-                    ? R.drawable.ic_add : R.drawable.ic_video;
-            binding.navView.getMenu().findItem(R.id.navigation_video).setIcon(icon);
+            updateNavigationIcons(destination.getId());
         });
         binding.navView.setOnNavigationItemReselectedListener(item -> {
-            if (item.getItemId() == R.id.navigation_video
-                    && navController.getCurrentDestination() != null
-                    && navController.getCurrentDestination().getId() == R.id.navigation_video) {
-                openCreateVideo(navController);
+            if (navController.getCurrentDestination() != null
+                    && navController.getCurrentDestination().getId() == item.getItemId()) {
+                openCreate(navController, item.getItemId());
             }
         });
         if (savedInstanceState != null
@@ -55,7 +54,27 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void openCreateVideo(NavController navController) {
+    private void updateNavigationIcons(int destinationId) {
+        setNavigationIcon(R.id.navigation_moments, R.drawable.ic_moments,
+                destinationId == R.id.navigation_moments);
+        setNavigationIcon(R.id.navigation_gallery, R.drawable.ic_gallery,
+                destinationId == R.id.navigation_gallery);
+        setNavigationIcon(R.id.navigation_video, R.drawable.ic_video,
+                destinationId == R.id.navigation_video);
+        setNavigationIcon(R.id.navigation_blog, R.drawable.ic_blog,
+                destinationId == R.id.navigation_blog);
+    }
+
+    private void setNavigationIcon(int itemId, int defaultIcon, boolean isCreateAction) {
+        binding.navView.getMenu().findItem(itemId).setIcon(
+                isCreateAction ? R.drawable.ic_add : defaultIcon);
+    }
+
+    private void openCreate(NavController navController, int destinationId) {
+        ContentType contentType = contentTypeForDestination(destinationId);
+        if (contentType == null) {
+            return;
+        }
         String authorization = null;
         try {
             authorization = new SessionStore(this).getAuthorizationHeader();
@@ -68,7 +87,30 @@ public class MainActivity extends AppCompatActivity {
             navController.navigate(R.id.navigation_profile);
             return;
         }
-        navController.navigate(R.id.action_global_create_video);
+        if (contentType == ContentType.SHORT_VIDEO) {
+            navController.navigate(R.id.action_global_create_video);
+            return;
+        }
+        Bundle arguments = new Bundle();
+        arguments.putString(CreateContentFragment.ARG_CONTENT_TYPE,
+                contentType.getEndpoint());
+        navController.navigate(R.id.action_global_create_content, arguments);
+    }
+
+    private static ContentType contentTypeForDestination(int destinationId) {
+        if (destinationId == R.id.navigation_moments) {
+            return ContentType.MOMENT;
+        }
+        if (destinationId == R.id.navigation_gallery) {
+            return ContentType.IMAGE_GALLERY;
+        }
+        if (destinationId == R.id.navigation_blog) {
+            return ContentType.BLOG;
+        }
+        if (destinationId == R.id.navigation_video) {
+            return ContentType.SHORT_VIDEO;
+        }
+        return null;
     }
 
     public void setVideoFullscreen(boolean fullscreen) {

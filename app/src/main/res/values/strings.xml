@@ -7,6 +7,14 @@
     <string name="title_profile">我的</string>
     <string name="content_search_hint">搜索内容</string>
     <string name="content_search">搜索</string>
+    <string name="content_search_title">搜索内容</string>
+    <string name="content_search_description">打开内容搜索</string>
+    <string name="content_search_back">返回</string>
+    <string name="content_search_prompt">输入关键词，搜索动态、图集、博客和视频</string>
+    <string name="content_search_empty">没有找到匹配内容</string>
+    <string name="content_search_loading">正在搜索…</string>
+    <string name="content_search_error">搜索失败，请检查网络连接并重试。</string>
+    <string name="content_search_partial_error">部分内容搜索失败，结果可能不完整。</string>
     <string name="content_loading">正在加载…</string>
     <string name="content_empty">暂无内容</string>
     <string name="content_untitled">未命名内容</string>

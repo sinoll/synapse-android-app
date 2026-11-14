@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 入口 | Apache 虚拟主机文档根 = `restful/web` |
-| 测试地址 | `http://192.168.10.10` |
+| 测试地址 | `http://192.168.8.10` |
 | URL 形式 | **根相对**，`GET /blog`，不带 `/api/restful` 前缀，也不带 `index.php` |
 | 请求体 | `application/json`（已注册 `JsonParser`），`/upload` 用 `multipart/form-data` |
 | CSRF | 关闭：接口无会话、无 Cookie，不存在 CSRF 面 |
@@ -18,7 +18,7 @@
 ## 快速上手
 
 ```bash
-BASE=http://192.168.10.10
+BASE=http://192.168.8.10
 
 # 1. 看接口清单（不需要令牌）
 curl -s $BASE/
@@ -163,7 +163,8 @@ curl -sS "$BASE/cate/3"
 
 列表成功时 `data` 的形状为 `{items: [...], total: 分类总数}`；详情的 `data` 直接返回单个分类对象。
 分类字段为 `id`、`name`、`slug`、`description`、`thumb`、`thumb_url`、`created_at` 和 `updated_at`。
-`thumb` 是存储路径，`thumb_url` 是完整 URL；没有封面时两者均为 `null`。列表不分页。
+`thumb` 和 `thumb_url` 均为根相对路径（例如 `/uploads/thumb/cate/example.jpg`），没有封面时两者均为 `null`。
+列表不分页。
 
 | 资源 | 子表 | 列表 | 详情 | 创建 | 更新 | 删除 | 点赞 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -192,6 +193,10 @@ curl -sS "$BASE/cate/3"
 `like_count`、`views`、`liked`、`author{id,username,nickname,avatar_url}`、`tags[]`、`cover_url`、
 `created_at`、`updated_at`（ISO-8601，带 `+08:00`）。
 
+所有媒体路径字段及 `avatar_url`、`cover_url`、`file_url`、`thumbnail_url`、`video_url` 等 URL 字段
+均只返回根相对路径（如 `/uploads/example.jpg`），不包含主机名。客户端可按自身配置使用
+`api.assetBaseUrl` 拼接主机名。
+
 写（四类通用）：`title`、`status`（0/1）、`visibility`（0/1/2）、`tags[]`。
 `title` 省略时由正文/说明派生；提交空串等于要求派生一次。
 
@@ -202,10 +207,10 @@ curl -sS "$BASE/cate/3"
 
 | 资源 | 读（列表） | 读（详情多给） | 写 | 创建时必填 |
 | --- | --- | --- | --- | --- |
-| 博客 | `summary`、`thumb`、`thumb_url`、`categories[]`（`content` 为 `null`） | `content`（已净化） | `summary`、`content`、`thumb`、`cate_id` | `content` |
-| 动态 | `text`（正文纯文本截断）、`thumb`、`thumb_url` | `content` | `content`、`thumb` | `content` |
-| 图集 | `caption`、`image_count`、`images[]`（`id/title/alt_text/file_path/file_url/thumbnail_path/thumbnail_url/sort_order/created_at`） | 同左 | `caption`、`file_paths[]` | `file_paths[]` |
-| 短视频 | `video_path`、`video_url`、`cover_path`、`cover_url`、`duration_seconds`、`video_type`、`video_type_label`、`is_vertical` | `description` | `description`、`video_path`、`cover_path`、`duration_seconds`、`video_type` | `video_path` |
+| 博客 | `summary`、`thumb_url`、`categories[]`（`content` 为 `null`） | `content`（已净化） | `summary`、`content`、`thumb`、`cate_id` | `content` |
+| 动态 | `text`（正文纯文本截断）、`thumb_url` | `content` | `content`、`thumb` | `content` |
+| 图集 | `caption`、`image_count`、`images[]`（`id/title/alt_text/file_url/thumbnail_url/sort_order/created_at`） | 同左 | `caption`、`file_paths[]` | `file_paths[]` |
+| 短视频 | `video_path`、`video_url`、`cover_path`、`cover_url`、`duration_seconds`、`video_type`、`video_type_label`、`is_vertical` | `description` | `description`、`video_path`、`thumbnail_path`、`duration_seconds`、`video_type` | `video_path` |
 
 补充口径（都与前台一致）：
 
@@ -215,7 +220,9 @@ curl -sS "$BASE/cate/3"
 * 图集的 `caption` 首行当每张图的 `title`，其余行当 `alt_text`（`Image::applyCaption()`）。
   只提交 `caption` 不动 `file_paths` 时，改写文案、保留顺序。
 * 省略 `thumb` 新建博客/动态时，按正文第一张本站插图推出封面缩略图（同前台 `blogThumbnailPath()`）。
+* 短视频请求中的 `thumbnail_path` 映射到数据库 `cover_path`；读取短视频时仍返回 `cover_path`、`cover_url`。旧请求字段 `cover_path` 暂时兼容。
 * 短视频 `video_type`：1 横屏、2 竖屏。
+* 通过 API `POST /upload` 上传的图片和视频均保存在 REST 应用的 `restful/web/uploads/` 对应子目录。
 
 ### 媒体字段填什么
 
@@ -228,14 +235,15 @@ curl -sS "$BASE/cate/3"
 形状必须是 `/uploads/{1~3 段目录}/{随机名}.{扩展名}`，越界路径（`../`、绝对路径、外站 URL）直接 422。
 历史数据里的 `/images/default-cover.png` 允许原样回传。
 
-各字段对空值的处理：`thumb`、`cover_path` 提交空串就是清空；`video_path` 提交空串视为「这次不换视频」
+各字段对空值的处理：`thumb`、短视频请求字段 `thumbnail_path`（旧字段 `cover_path` 也兼容）提交空串就是清空；`video_path` 提交空串视为「这次不换视频」
 （该列非空，清空没有意义），新建时缺它则 422；`file_paths` 必须是非空数组，想去掉某几张图就提交剩下的完整清单。
 
 ## 发布博客、动态、图集与短视频
 
 所有写接口都要先登录，并在每个请求中发送 `Authorization: Bearer <token>`。先将本机文件上传到站点，
-再把上传响应里的 `path` 或 `thumbnail_path` 作为 JSON 路径提交；内容接口不接收文件本身。以下示例使用 Bash，
-上传后请将响应中的路径复制到对应请求体。
+博客、动态、图集可一次上传多张图片，响应中的 `imgs` 按上传顺序包含每张图片的服务器相对 `path` 和原文件名 `original_name`；
+`thumbnail_path` 是第一张图片的缩略图。
+短视频直接使用响应中的 `video_path` 和 `thumbnail_path`。内容接口不接收文件本身。以下示例使用 Bash，上传后请将响应中的路径复制到对应请求体。
 
 ### 发布博客
 
@@ -245,17 +253,18 @@ curl -sS "$BASE/cate/3"
 curl -sS "$BASE/cate"
 ```
 
-先上传封面图片（`kind=blog`，图片不能超过 20 MB）：
+先上传封面图片（`kind=blog`，每张图片不能超过 20 MB；`blog`、`moment`、`images` 都支持一次上传多张图片）：
 
 ```bash
 curl -sS -X POST "$BASE/upload" \
   -H "Authorization: Bearer $TOKEN" \
   -F "kind=blog" \
-  -F "file=@cover.jpg"
+  -F "file[]=@cover.jpg"
 ```
 
-成功响应中的 `data.thumbnail_path` 是生成的 640px 缩略图路径；如果缩略图生成失败则为 `null`，可改用
-`data.path`。将其中一个值填入博客的 `thumb`，再提交 JSON：
+成功响应中的 `data.thumbnail_path` 是生成的 460×260 缩略图路径；如果缩略图生成失败则为 `null`，可改用
+`data.imgs[0].path`。`data.imgs` 按上传顺序返回每张原图的路径和原始文件名，缩略图只根据第一张图片生成。
+将 `data.thumbnail_path`（或 `data.imgs[0].path`）填入博客的 `thumb`，再提交 JSON：
 
 ```bash
 curl -sS -X POST "$BASE/blog" \
@@ -281,14 +290,15 @@ curl -sS -X POST "$BASE/blog" \
 
 ### 发布动态
 
-动态正文必填；可直接发文字，也可先上传图片，再把图片路径作为 HTML 图片嵌入 `content`。图片用 `kind=moment`
-上传，生成的缩略图路径也可选作动态封面：
+动态正文必填；可直接发文字，也可先用 `kind=moment` 一次上传多张图片，再按顺序把 `data.imgs` 中每项的 `path`
+作为 HTML 图片嵌入 `content`。`data.thumbnail_path` 是第一张图片的缩略图，也可选作动态封面：
 
 ```bash
 curl -sS -X POST "$BASE/upload" \
   -H "Authorization: Bearer $TOKEN" \
   -F "kind=moment" \
-  -F "file=@moment.jpg"
+  -F "file[]=@moment-1.jpg" \
+  -F "file[]=@moment-2.jpg"
 ```
 
 ```bash
@@ -296,7 +306,7 @@ curl -sS -X POST "$BASE/moment" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "content": "<p>今天的随手记录 #日常#</p><p><img src=\"/uploads/moment/YYYYMM/替换为上传响应中的文件名.jpg\" alt=\"随手拍\"></p>",
+    "content": "<p>今天的随手记录 #日常#</p><p><img src=\"替换为data.imgs[0].path\" alt=\"随手拍\"></p>",
     "thumb": "/uploads/thumb/moment/替换为上传响应中的文件名.jpg",
     "status": 1,
     "visibility": 2
@@ -309,19 +319,29 @@ curl -sS -X POST "$BASE/moment" \
 
 ### 发布图集
 
-先对每张图片分别调用 `POST /upload`，使用 `kind=images`，每张不超过 20 MB。把每次上传响应里的 `data.path`
-按展示顺序放入 `file_paths`：
+使用 `kind=images` 一次上传图集中的所有图片，每张不超过 20 MB。`data.imgs` 按上传顺序返回每张图片的服务器相对路径
+和原始文件名；取每项的 `path` 按顺序作为 `file_paths` 提交，缩略图根据第一张图片生成：
 
 ```bash
 curl -sS -X POST "$BASE/upload" \
   -H "Authorization: Bearer $TOKEN" \
   -F "kind=images" \
-  -F "file=@photo-1.jpg"
+  -F "file[]=@photo-1.jpg" \
+  -F "file[]=@photo-2.jpg"
+```
+
+也可以分别上传图片，再把每次响应中的 `data.imgs[0].path` 按展示顺序合并：
+
+```bash
+curl -sS -X POST "$BASE/upload" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "kind=images" \
+  -F "file[]=@photo-1.jpg"
 
 curl -sS -X POST "$BASE/upload" \
   -H "Authorization: Bearer $TOKEN" \
   -F "kind=images" \
-  -F "file=@photo-2.jpg"
+  -F "file[]=@photo-2.jpg"
 ```
 
 ```bash
@@ -331,8 +351,8 @@ curl -sS -X POST "$BASE/images" \
   -d '{
     "caption": "周末旅行\n湖边和山间的风景 #旅行#",
     "file_paths": [
-      "/uploads/images/YYYYMM/替换为第一张上传响应中的文件名.jpg",
-      "/uploads/images/YYYYMM/替换为第二张上传响应中的文件名.jpg"
+      "替换为data.imgs[0].path",
+      "替换为data.imgs[1].path"
     ],
     "status": 1,
     "visibility": 2
@@ -345,7 +365,7 @@ curl -sS -X POST "$BASE/images" \
 
 ### 发布短视频
 
-上传视频（`kind=video`，文件大小由服务器 PHP 的 `upload_max_filesize` 与 `post_max_size` 配置决定；服务器须能调用 FFmpeg 验证并抽帧）：
+上传视频（`kind=video`，文件大小由服务器 PHP 的 `upload_max_filesize` 与 `post_max_size` 配置决定；服务器须能调用 FFmpeg 验证并抽帧、调用同目录下的 FFprobe 读取时长和尺寸）：
 
 ```bash
 curl -sS -X POST "$BASE/upload" \
@@ -354,8 +374,20 @@ curl -sS -X POST "$BASE/upload" \
   -F "file=@clip.mp4"
 ```
 
-使用响应中的 `data.path` 作为必填 `video_path`；抽帧成功时，将 `data.thumbnail_path` 填入 `cover_path`。
-若 `thumbnail_path` 为 `null`，可省略 `cover_path`，也可使用自备封面先以 `kind=images` 上传再填其路径。
+视频上传成功后，响应直接包含可供内容接口使用的 `video_path` 和 `thumbnail_path`，并自动探测
+`duration_seconds`（四舍五入到秒）及 `video_type`（1 横屏、2 竖屏）。若抽帧失败，`thumbnail_path` 为
+`null`，此时请求短视频接口可省略 `thumbnail_path`，也可使用自备封面先以 `kind=images` 上传再填其路径。
+视频文件与抽取的封面图也保存在 API 应用的 `restful/web/uploads/` 对应子目录下。
+
+```json
+{
+  "kind": "video",
+  "video_path": "/uploads/video/YYYYMM/实际文件名.mp4",
+  "thumbnail_path": "/uploads/thumb/video/实际文件名.jpg",
+  "duration_seconds": 18,
+  "video_type": 2
+}
+```
 
 ```bash
 curl -sS -X POST "$BASE/short_video" \
@@ -365,7 +397,7 @@ curl -sS -X POST "$BASE/short_video" \
     "title": "周末散步",
     "description": "记录周末的风景 #生活#",
     "video_path": "/uploads/video/YYYYMM/替换为实际文件名.mp4",
-    "cover_path": "/uploads/thumb/video/替换为上传响应中的文件名.jpg",
+    "thumbnail_path": "/uploads/thumb/video/替换为上传响应中的文件名.jpg",
     "duration_seconds": 18,
     "video_type": 2,
     "tags": ["周末"],
@@ -375,7 +407,7 @@ curl -sS -X POST "$BASE/short_video" \
 ```
 
 `video_path` 必填；`title` 省略时由简介生成。`video_type` 为整数：`1` 横屏、`2` 竖屏。
-`duration_seconds`、`cover_path` 和 `tags` 可省略。成功后用 `GET /short_video/{id}` 查看详情。
+`duration_seconds`、`thumbnail_path` 和 `tags` 可省略。`thumbnail_path` 会保存到视频的 `cover_path` 列；读取接口仍返回 `cover_path` 和 `cover_url`。旧请求字段 `cover_path` 暂时兼容，但同一请求不能同时提交这两个字段。成功后用 `GET /short_video/{id}` 查看详情。
 短视频列表会返回视频/封面路径和 URL；`description` 在详情响应中提供。
 
 ## 修改内容（四类资源）
@@ -439,8 +471,8 @@ curl -sS -X PATCH "$BASE/short_video/123" \
   }'
 ```
 
-替换视频时，先以 `kind=video` 上传新文件，再提交新的 `video_path`；要换封面时提交新的 `cover_path`，
-传 `"cover_path": ""` 可清除封面。`video_path` 传空串不会清除或替换现有视频。更新标题、简介或话题字段
+替换视频时，先以 `kind=video` 上传新文件，再提交新的 `video_path`；要换封面时提交新的 `thumbnail_path`，
+传 `"thumbnail_path": ""` 可清除封面。`video_path` 传空串不会清除或替换现有视频。更新标题、简介或话题字段
 时会同步更新自动提取的话题标签。
 
 任一资源都可以用以下请求更新发布状态、可见范围或标签；`tags` 是整体替换，空数组可清空显式标签
@@ -468,15 +500,46 @@ curl -sS -X PATCH "$BASE/blog/123" \
 
 | `kind` | 落盘目录 | 单文件上限 | 扩展名 | 附带生成 |
 | --- | --- | --- | --- | --- |
-| `blog` | `/uploads/blog/YYYYMM/` | 20 MB | jpg/jpeg/png/gif/webp | `/uploads/thumb/blog/` 640px 缩略图 |
-| `moment` | `/uploads/moment/YYYYMM/` | 20 MB | 同上 | `/uploads/thumb/moment/` |
-| `images` | `/uploads/images/YYYYMM/` | 20 MB | 同上 | `/uploads/thumb/images/` |
+| `blog` | `/uploads/blog/YYYYMM/` | 20 MB/张 | jpg/jpeg/png/gif/webp | `/uploads/thumb/blog/` 第一张图片的 460×260 缩略图 |
+| `moment` | `/uploads/moment/YYYYMM/` | 20 MB/张 | 同上 | `/uploads/thumb/moment/` 第一张图片的 460×260 缩略图 |
+| `images` | `/uploads/images/YYYYMM/` | 20 MB/张 | 同上 | `/uploads/thumb/images/` 第一张图片的 460×260 缩略图 |
 | `cate` | `/uploads/thumb/cate/`（平铺） | 20 MB | 同上 | — |
-| `video` | `/uploads/video/YYYYMM/` | 由服务器 PHP 配置决定 | mp4/webm/mov/ogv/ogg | `/uploads/thumb/video/` 第 5 帧抽图 |
+| `video` | `/uploads/video/YYYYMM/` | 由服务器 PHP 配置决定 | mp4/webm/mov/ogv/ogg | `/uploads/thumb/video/` 第 5 帧 460×260 抽图 |
 
-返回 `{kind, path, url, size, thumbnail_path, thumbnail_url}`。缩略图或抽帧失败不影响上传成功，
-改为在 `warning` 里说明；此时把 `path` 交给内容接口即可（详情会按无缩略图降级渲染）。
-图片还会用 `getimagesize()` 复核内容，视频会由 FFmpeg 校验视频流并解码首帧；内容无效的文件会以 422 拒绝，不会保存到站点。
+`blog`、`moment` 和 `images` 支持用多个 `file[]` 字段一次上传多张图片，返回
+`{kind, imgs, thumbnail_path}`。`imgs` 是按上传顺序排列的图片信息数组，每项包含服务器相对路径 `path` 和原始文件名
+`original_name`；只为第一张图片生成缩略图，
+路径在 `thumbnail_path`。这三种图片上传响应**不包含** `path`、`url`、`size` 和 `thumbnail_url`。
+单张上传也使用 `file[]` 字段。`cate` 仍为单图上传，沿用 `{kind, path, url, size, thumbnail_path, thumbnail_url}`。
+例如，两张图片上传成功时：
+
+```json
+{
+  "kind": "images",
+  "imgs": [
+    {
+      "path": "/uploads/images/YYYYMM/服务器文件名1.jpg",
+      "original_name": "第一张图片.jpg"
+    },
+    {
+      "path": "/uploads/images/YYYYMM/服务器文件名2.jpg",
+      "original_name": "第二张图片.jpg"
+    }
+  ],
+  "thumbnail_path": "/uploads/thumb/images/第一张图片.jpg"
+}
+```
+
+若首图缩略图生成失败，`thumbnail_path` 为 `null`，并附带 `warning`；`imgs` 仍返回所有已保存原图路径和原始文件名。
+视频上传返回 `{kind, video_path, thumbnail_path, duration_seconds, video_type}`。
+视频 `video_type` 为 `1`（横屏）或 `2`（竖屏），按视频显示方向自动判断；
+`duration_seconds` 为 FFprobe 时长四舍五入到秒后的整数。缩略图或抽帧失败不影响上传成功，改为在
+`warning` 里说明；此时视频上传响应的 `thumbnail_path` 为 `null`，可省略封面字段（详情会按无封面降级渲染）。图片还会用
+`getimagesize()` 复核内容，视频会由 FFmpeg 校验视频流并解码首帧，且须能调用同目录下的 FFprobe 读取时长和尺寸；
+内容无效的文件会以 422 拒绝，不会保存到站点。
+
+博客、动态、图集及短视频生成的缩略图和视频封面均固定为 `460×260` 像素，保持原图比例并在空白区域补边；
+尺寸由 `common/config/params.php` 中的 `thumbnail.width`、`thumbnail.height` 统一配置。
 
 ## 删除会不会丢文件
 

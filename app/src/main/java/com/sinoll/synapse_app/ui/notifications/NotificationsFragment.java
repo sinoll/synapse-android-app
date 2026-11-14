@@ -89,6 +89,8 @@ public final class NotificationsFragment extends Fragment {
         messageView = view.findViewById(R.id.profile_message);
         stateView = view.findViewById(R.id.profile_content_state);
         refreshLayout = view.findViewById(R.id.profile_content_refresh);
+        view.findViewById(R.id.profile_search).setOnClickListener(button ->
+                Navigation.findNavController(button).navigate(R.id.action_global_search));
 
         loginButton = view.findViewById(R.id.profile_login);
         loginButton.setOnClickListener(ignored -> showLoginDialog());

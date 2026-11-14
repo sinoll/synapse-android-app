@@ -34,65 +34,15 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/content_heading" />
 
-    <LinearLayout
-        android:id="@+id/content_search_row"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:layout_marginTop="20dp"
-        android:layout_marginEnd="8dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        app:layout_constraintEnd_toStartOf="@id/content_create"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/content_subheading">
-
-        <EditText
-            android:id="@+id/content_search"
-            android:layout_width="0dp"
-            android:layout_height="46dp"
-            android:layout_weight="1"
-            android:background="@drawable/bg_search_field"
-            android:hint="@string/content_search_hint"
-            android:imeOptions="actionSearch"
-            android:inputType="text"
-            android:paddingStart="14dp"
-            android:paddingEnd="14dp"
-            android:singleLine="true"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp" />
-
-        <Button
-            android:id="@+id/content_search_button"
-            style="@style/Widget.Synapse.SearchButton"
-            android:layout_width="wrap_content"
-            android:layout_height="46dp"
-            android:layout_marginStart="8dp"
-            android:text="@string/content_search" />
-    </LinearLayout>
-
-    <ImageButton
-        android:id="@+id/content_create"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_marginEnd="16dp"
-        android:background="@drawable/bg_create_button"
-        android:contentDescription="@string/content_create_description"
-        android:padding="12dp"
-        android:src="@drawable/ic_add"
-        app:layout_constraintBottom_toBottomOf="@id/content_search_row"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="@id/content_search_row" />
-
     <FrameLayout
         android:id="@+id/content_list_container"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="20dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/content_search_row">
+        app:layout_constraintTop_toBottomOf="@id/content_subheading">
 
         <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
             android:id="@+id/content_refresh"

@@ -101,10 +101,7 @@ public final class ContentRepository implements AutoCloseable {
                 for (UploadFile file : files) {
                     JSONObject upload = apiClient.upload("images", file.getFileName(),
                             file.getMimeType(), file.getData(), authorization);
-                    String path = upload.optString("path", "");
-                    if (path.isEmpty()) {
-                        path = upload.optString("file_path", "");
-                    }
+                    String path = uploadedImagePath(upload);
                     if (path.isEmpty()) {
                         throw new IllegalStateException("图片上传响应缺少路径。");
                     }
@@ -131,8 +128,7 @@ public final class ContentRepository implements AutoCloseable {
             try (InputStream input = video.open()) {
                 JSONObject upload = apiClient.upload("video", video.getFileName(),
                         video.getMimeType(), input, video.getLength(), authorization);
-                String videoPath = upload.optString("path",
-                        upload.optString("file_path", ""));
+                String videoPath = uploadedVideoPath(upload);
                 if (videoPath.trim().isEmpty()) {
                     throw new IllegalStateException("视频上传响应缺少路径。");
                 }
@@ -160,26 +156,8 @@ public final class ContentRepository implements AutoCloseable {
         }
         return executor.submit(() -> {
             try {
-                JSONObject body = new JSONObject();
-                body.put("video_path", videoPath);
-                String normalizedTitle = trimToNull(title);
-                if (normalizedTitle != null) {
-                    body.put("title", normalizedTitle);
-                }
-                String normalizedDescription = trimToNull(description);
-                if (normalizedDescription != null) {
-                    body.put("description", normalizedDescription);
-                }
-                String normalizedCoverPath = trimToNull(coverPath);
-                if (normalizedCoverPath != null) {
-                    body.put("cover_path", normalizedCoverPath);
-                }
-                if (durationSeconds > 0) {
-                    body.put("duration_seconds", durationSeconds);
-                }
-                body.put("video_type", videoType == 1 ? 1 : 2);
-                body.put("status", 1);
-                body.put("visibility", visibility);
+                JSONObject body = buildVideoRequestBody(videoPath, coverPath, title,
+                        description, durationSeconds, videoType, visibility);
                 callback.onSuccess(apiClient.post("short_video", body, authorization));
             } catch (Exception error) {
                 if (error instanceof ApiException) {
@@ -204,9 +182,8 @@ public final class ContentRepository implements AutoCloseable {
         return uploadVideo(video, authorization, new Callback<JSONObject>() {
             @Override
             public void onSuccess(JSONObject upload) {
-                String videoPath = upload.optString("path",
-                        upload.optString("file_path", ""));
-                String coverPath = upload.optString("thumbnail_path", "");
+                String videoPath = uploadedVideoPath(upload);
+                String coverPath = uploadedThumbnailPath(upload);
                 createVideo(videoPath, coverPath, title, description, durationSeconds,
                         videoType, visibility, authorization, callback);
             }
@@ -216,6 +193,70 @@ public final class ContentRepository implements AutoCloseable {
                 callback.onError(error);
             }
         });
+    }
+
+    static JSONObject buildVideoRequestBody(String videoPath, String thumbnailPath,
+                                            String title, String description,
+                                            long durationSeconds, int videoType, int visibility)
+            throws org.json.JSONException {
+        JSONObject body = new JSONObject();
+        body.put("video_path", videoPath);
+        String normalizedTitle = trimToNull(title);
+        if (normalizedTitle != null) {
+            body.put("title", normalizedTitle);
+        }
+        String normalizedDescription = trimToNull(description);
+        if (normalizedDescription != null) {
+            body.put("description", normalizedDescription);
+        }
+        String normalizedThumbnailPath = trimToNull(thumbnailPath);
+        if (normalizedThumbnailPath != null) {
+            body.put("thumbnail_path", normalizedThumbnailPath);
+        }
+        if (durationSeconds > 0) {
+            body.put("duration_seconds", durationSeconds);
+        }
+        body.put("video_type", videoType == 1 ? 1 : 2);
+        body.put("status", 1);
+        body.put("visibility", visibility);
+        return body;
+    }
+
+    static String uploadedVideoPath(JSONObject upload) {
+        String path = upload.optString("video_path", "");
+        if (path.trim().isEmpty()) {
+            path = upload.optString("path", "");
+        }
+        if (path.trim().isEmpty()) {
+            path = upload.optString("file_path", "");
+        }
+        return path;
+    }
+
+    static String uploadedImagePath(JSONObject upload) {
+        if (upload == null) {
+            return "";
+        }
+        JSONArray images = upload.optJSONArray("imgs");
+        if (images != null && images.length() > 0) {
+            JSONObject image = images.optJSONObject(0);
+            if (image != null) {
+                String path = image.optString("path", "");
+                if (!path.trim().isEmpty()) {
+                    return path;
+                }
+            }
+        }
+        String path = upload.optString("path", "");
+        return path.trim().isEmpty() ? upload.optString("file_path", "") : path;
+    }
+
+    static String uploadedThumbnailPath(JSONObject upload) {
+        if (upload == null || !upload.has("thumbnail_path")
+                || upload.isNull("thumbnail_path")) {
+            return "";
+        }
+        return upload.optString("thumbnail_path", "");
     }
 
     private static String trimToNull(String value) {

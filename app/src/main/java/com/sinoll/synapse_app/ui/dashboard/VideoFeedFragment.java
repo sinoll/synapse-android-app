@@ -41,7 +41,7 @@ public final class VideoFeedFragment extends Fragment {
         pager = view.findViewById(R.id.video_pager);
         state = view.findViewById(R.id.video_feed_state);
         viewModel = new ViewModelProvider(this).get(ContentListViewModel.class);
-        adapter = new VideoPagerAdapter();
+        adapter = new VideoPagerAdapter(requireContext());
         adapter.setFullscreenListener(fullscreen -> {
             if (getActivity() instanceof com.sinoll.synapse_app.MainActivity) {
                 ((com.sinoll.synapse_app.MainActivity) getActivity())
@@ -55,9 +55,7 @@ public final class VideoFeedFragment extends Fragment {
             public void onPageSelected(int position) {
                 updateVideoFullscreen(position);
                 adapter.activate(position);
-                if (position >= adapter.getItemCount() - 2) {
-                    viewModel.loadNextPage();
-                }
+                preloadFollowing(position);
             }
         });
 
@@ -65,6 +63,7 @@ public final class VideoFeedFragment extends Fragment {
             if (page != null) {
                 adapter.submitItems(page.getItems());
                 updateVideoFullscreen(pager.getCurrentItem());
+                preloadFollowing(pager.getCurrentItem());
             }
             renderState(page);
         });
@@ -91,6 +90,17 @@ public final class VideoFeedFragment extends Fragment {
         }
         viewModel.setSession(token, null);
         viewModel.setContentType(ContentType.SHORT_VIDEO);
+    }
+
+    private void preloadFollowing(int position) {
+        if (adapter == null || viewModel == null) {
+            return;
+        }
+        int cachedCount = adapter.preloadFollowing(position);
+        ContentPage page = viewModel.getPage().getValue();
+        if (cachedCount < VideoPagerAdapter.PRELOAD_COUNT && page != null && page.hasNextPage()) {
+            viewModel.loadNextPage();
+        }
     }
 
     private void renderState(@Nullable ContentPage page) {

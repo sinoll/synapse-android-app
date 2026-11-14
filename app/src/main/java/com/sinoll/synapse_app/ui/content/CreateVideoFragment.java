@@ -180,9 +180,19 @@ public final class CreateVideoFragment extends Fragment {
             if (upload == null) {
                 return;
             }
-            uploadedVideoPath = upload.optString("path",
-                    upload.optString("file_path", ""));
-            uploadedCoverPath = upload.optString("thumbnail_path", "");
+            uploadedVideoPath = upload.optString("video_path",
+                    upload.optString("path", upload.optString("file_path", "")));
+            uploadedCoverPath = upload.has("thumbnail_path")
+                    && !upload.isNull("thumbnail_path")
+                    ? upload.optString("thumbnail_path", "") : "";
+            long serverDuration = parseLong(upload.optString("duration_seconds", ""));
+            if (serverDuration > 0) {
+                uploadedDurationSeconds = serverDuration;
+            }
+            int serverVideoType = upload.optInt("video_type", 0);
+            if (serverVideoType == 1 || serverVideoType == 2) {
+                uploadedVideoType = serverVideoType;
+            }
             uploadingVideo = false;
             uploadComplete = !uploadedVideoPath.trim().isEmpty();
             if (!uploadComplete) {

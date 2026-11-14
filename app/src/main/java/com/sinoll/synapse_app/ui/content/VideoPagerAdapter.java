@@ -1,6 +1,6 @@
 package com.sinoll.synapse_app.ui.content;
 
-import android.net.Uri;
+import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
@@ -23,14 +23,20 @@ import java.util.List;
 
 public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdapter.VideoViewHolder> {
 
+    public static final int PRELOAD_COUNT = 5;
     private static final long PLAYBACK_CONTROLS_TIMEOUT_MILLIS = 1800;
     private static final long VIDEO_INFO_TIMEOUT_MILLIS = 2200;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final List<ContentItem> items = new ArrayList<>();
+    private final VideoPreloadCache videoCache;
     private VideoViewHolder activeHolder;
     private int activePosition = RecyclerView.NO_POSITION;
     private OnFullscreenListener fullscreenListener;
     private boolean fullscreenMode;
+
+    public VideoPagerAdapter(Context context) {
+        videoCache = new VideoPreloadCache(context);
+    }
 
     public void setFullscreenListener(OnFullscreenListener listener) {
         fullscreenListener = listener;
@@ -121,6 +127,7 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
         root.addView(fullscreen, fullscreenParams);
         return new VideoViewHolder(root, video, info.layout, scrim, info.title,
                 info.description, info.metadata, playPause, fullscreen, mainHandler,
+                videoCache,
                 isFullscreen -> {
                     fullscreenMode = isFullscreen;
                     if (fullscreenListener != null) {
@@ -155,6 +162,10 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
     @Override
     public int getItemCount() {
         return items.size();
+    }
+
+    public int preloadFollowing(int position) {
+        return videoCache.preloadFollowing(items, position);
     }
 
     public void activate(int position) {
@@ -208,6 +219,7 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
         private final ImageButton playPause;
         private final ImageButton fullscreen;
         private final Handler mainHandler;
+        private final VideoPreloadCache videoCache;
         private final OnFullscreenListener fullscreenListener;
         private boolean prepared;
         private boolean verticalVideo = true;
@@ -227,6 +239,7 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
                         android.widget.LinearLayout infoPanel, View infoScrim,
                         TextView title, TextView description, TextView metadata,
                         ImageButton playPause, ImageButton fullscreen, Handler mainHandler,
+                        VideoPreloadCache videoCache,
                         OnFullscreenListener fullscreenListener) {
             super(root);
             this.video = video;
@@ -238,6 +251,7 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
             this.playPause = playPause;
             this.fullscreen = fullscreen;
             this.mainHandler = mainHandler;
+            this.videoCache = videoCache;
             this.fullscreenListener = fullscreenListener;
             hidePlayButton = () -> {
                 if (video.isPlaying()) {
@@ -326,7 +340,7 @@ public final class VideoPagerAdapter extends RecyclerView.Adapter<VideoPagerAdap
                 return true;
             });
             video.setOnCompletionListener(mediaPlayer -> playIfReady());
-            video.setVideoURI(Uri.parse(url));
+            video.setVideoURI(videoCache.getPlaybackUri(url));
         }
 
         void playIfReady() {

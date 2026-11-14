@@ -54,6 +54,10 @@
         android:id="@+id/action_global_create_video"
         app:destination="@id/create_video" />
 
+    <action
+        android:id="@+id/action_global_search"
+        app:destination="@id/search" />
+
     <fragment
         android:id="@+id/create_video"
         android:name="com.sinoll.synapse_app.ui.content.CreateVideoFragment"
@@ -95,4 +99,10 @@
             android:name="content_id"
             app:argType="integer" />
     </fragment>
+
+    <fragment
+        android:id="@+id/search"
+        android:name="com.sinoll.synapse_app.ui.content.ContentSearchFragment"
+        android:label="@string/content_search_title"
+        tools:layout="@layout/fragment_content_search" />
 </navigation>

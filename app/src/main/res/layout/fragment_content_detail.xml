@@ -40,6 +40,14 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:textAppearance="?attr/textAppearanceBody1" />
+
+            <WebView
+                android:id="@+id/content_detail_web_body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:background="@android:color/transparent"
+                android:visibility="gone" />
         </LinearLayout>
     </ScrollView>
 
