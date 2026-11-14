@@ -1,12 +1,20 @@
 package com.sinoll.synapse_app.ui.content;
 
+import android.app.Activity;
 import android.content.ContentResolver;
 import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.Color;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.OpenableColumns;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.style.ImageSpan;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -17,10 +25,16 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import android.util.Base64;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.Navigation;
@@ -33,11 +47,20 @@ import com.sinoll.synapse_app.data.model.ContentType;
 import com.sinoll.synapse_app.data.repository.ContentRepository;
 import com.sinoll.synapse_app.data.session.SessionStore;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -61,6 +84,7 @@ public final class CreateContentFragment extends Fragment {
             new ActivityResultContracts.GetContent(), this::onVideoSelected);
     private final List<Uri> selectedImages = new ArrayList<>();
     private final List<Category> categories = new ArrayList<>();
+    private final Map<String, Uri> blogImageSources = new LinkedHashMap<>();
 
     private ExecutorService imageReader;
     private CreateContentViewModel viewModel;
@@ -78,8 +102,13 @@ public final class CreateContentFragment extends Fragment {
     private String[] visibilityLabels;
     private int selectedCategoryId;
     private int selectedVisibility = VISIBILITY_USERS;
+    private View blogEditorSection;
+    private WebView blogEditor;
+    private View blogInsertImageButton;
+    private boolean blogEditorReady;
     private View imagesSection;
     private TextView imagesStatus;
+    private View insertImagesButton;
     private View videoSection;
     private TextView videoStatus;
     private Uri selectedVideo;
@@ -113,8 +142,12 @@ public final class CreateContentFragment extends Fragment {
         categoryLayout = view.findViewById(R.id.create_category_layout);
         categoryInput = view.findViewById(R.id.create_category);
         visibilityInput = view.findViewById(R.id.create_visibility);
+        blogEditorSection = view.findViewById(R.id.create_blog_editor_section);
+        blogEditor = view.findViewById(R.id.create_blog_editor);
+        blogInsertImageButton = view.findViewById(R.id.create_blog_insert_image);
         imagesSection = view.findViewById(R.id.create_images_section);
         imagesStatus = view.findViewById(R.id.create_images_status);
+        insertImagesButton = view.findViewById(R.id.create_insert_images);
         videoSection = view.findViewById(R.id.create_video_section);
         videoStatus = view.findViewById(R.id.create_video_status);
         publishButton = view.findViewById(R.id.create_publish);
@@ -125,15 +158,20 @@ public final class CreateContentFragment extends Fragment {
         String typeName = arguments == null ? null : arguments.getString(ARG_CONTENT_TYPE);
         ContentType parsed = contentTypeFromName(typeName);
         contentType = parsed == null ? ContentType.MOMENT : parsed;
+        blogImageSources.clear();
+        blogEditorReady = false;
         bindType();
         setupVisibilityDropdown();
         if (contentType == ContentType.BLOG) {
             setupCategoryDropdown();
+            setupBlogEditor(view);
             viewModel.loadCategories();
         }
         publishButton.setOnClickListener(ignored -> publish());
         view.findViewById(R.id.create_select_images)
                 .setOnClickListener(ignored -> imagePicker.launch("image/*"));
+        insertImagesButton.setOnClickListener(ignored -> imagePicker.launch("image/*"));
+        blogInsertImageButton.setOnClickListener(ignored -> pickBlogImages());
         view.findViewById(R.id.create_select_video)
                 .setOnClickListener(ignored -> videoPicker.launch("video/*"));
 
@@ -173,6 +211,7 @@ public final class CreateContentFragment extends Fragment {
         boolean blog = contentType == ContentType.BLOG;
         boolean gallery = contentType == ContentType.IMAGE_GALLERY;
         boolean video = contentType == ContentType.SHORT_VIDEO;
+        blogEditorSection.setVisibility(blog ? View.VISIBLE : View.GONE);
         if (blog) {
             heading = R.string.create_content_blog_title;
             subheading = R.string.create_content_blog_subtitle;
@@ -190,13 +229,17 @@ public final class CreateContentFragment extends Fragment {
         subheadingView.setText(subheading);
         titleInput.setVisibility(blog || video ? View.VISIBLE : View.GONE);
         summaryInput.setVisibility(blog ? View.VISIBLE : View.GONE);
-        bodyInput.setVisibility(gallery ? View.GONE : View.VISIBLE);
+        bodyInput.setVisibility(gallery || blog ? View.GONE : View.VISIBLE);
         bodyInput.setHint(video
                 ? R.string.create_content_video_description_hint
-                : R.string.create_content_body_hint);
+                : contentType == ContentType.MOMENT
+                        ? R.string.create_content_moment_body_hint
+                        : R.string.create_content_body_hint);
         captionInput.setVisibility(gallery ? View.VISIBLE : View.GONE);
         tagsInput.setVisibility(blog ? View.VISIBLE : View.GONE);
         categoryLayout.setVisibility(blog ? View.VISIBLE : View.GONE);
+        insertImagesButton.setVisibility(contentType == ContentType.MOMENT
+                ? View.VISIBLE : View.GONE);
         imagesSection.setVisibility(gallery ? View.VISIBLE : View.GONE);
         videoSection.setVisibility(video ? View.VISIBLE : View.GONE);
         selectedVisibility = blog || video ? VISIBILITY_PUBLIC : VISIBILITY_USERS;
@@ -252,6 +295,160 @@ public final class CreateContentFragment extends Fragment {
         categoryInput.setText(labels.get(0), false);
     }
 
+    private void setupBlogEditor(View root) {
+        WebSettings settings = blogEditor.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(false);
+        settings.setAllowFileAccess(false);
+        settings.setAllowContentAccess(false);
+        settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        blogEditor.setBackgroundColor(Color.TRANSPARENT);
+        blogEditor.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                return true;
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                if (view == blogEditor) {
+                    blogEditorReady = true;
+                }
+            }
+        });
+        blogEditor.loadDataWithBaseURL("https://editor.local/",
+                blogEditorDocument(), "text/html", "UTF-8", null);
+
+        root.findViewById(R.id.create_blog_heading)
+                .setOnClickListener(ignored -> showBlogBlockMenu());
+        root.findViewById(R.id.create_blog_bold)
+                .setOnClickListener(ignored -> runBlogEditorCommand("bold", ""));
+        root.findViewById(R.id.create_blog_italic)
+                .setOnClickListener(ignored -> runBlogEditorCommand("italic", ""));
+        root.findViewById(R.id.create_blog_color)
+                .setOnClickListener(ignored -> showBlogColorMenu());
+        root.findViewById(R.id.create_blog_size)
+                .setOnClickListener(ignored -> showBlogSizeMenu());
+    }
+
+    private void showBlogBlockMenu() {
+        withSavedBlogSelection(() -> {
+            String[] labels = {"正文", "一级标题", "二级标题", "三级标题"};
+            String[] blocks = {"p", "h1", "h2", "h3"};
+            new AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.create_blog_format_heading)
+                    .setItems(labels, (dialog, position) ->
+                            runBlogEditorCommand("formatBlock", blocks[position]))
+                    .show();
+        });
+    }
+
+    private void showBlogColorMenu() {
+        withSavedBlogSelection(() -> {
+            String[] labels = {"黑色", "红色", "橙色", "蓝色", "绿色"};
+            String[] colors = {"#202124", "#D93025", "#E37400", "#1967D2", "#188038"};
+            new AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.create_blog_color_dialog)
+                    .setItems(labels, (dialog, position) ->
+                            runBlogEditorColor(colors[position]))
+                    .show();
+        });
+    }
+
+    private void showBlogSizeMenu() {
+        withSavedBlogSelection(() -> {
+            String[] labels = {"较小", "小", "正常", "大", "较大", "特大"};
+            String[] sizes = {"1", "2", "3", "4", "5", "6"};
+            new AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.create_blog_size_dialog)
+                    .setItems(labels, (dialog, position) ->
+                            runBlogEditorCommand("fontSize", sizes[position]))
+                    .show();
+        });
+    }
+
+    private void withSavedBlogSelection(Runnable action) {
+        if (!blogEditorReady) {
+            showMessage(getString(R.string.create_blog_editor_loading));
+            return;
+        }
+        blogEditor.evaluateJavascript("window.saveSelection()", ignored -> {
+            if (isAdded()) {
+                action.run();
+            }
+        });
+    }
+
+    private void runBlogEditorCommand(String command, String value) {
+        if (!blogEditorReady) {
+            showMessage(getString(R.string.create_blog_editor_loading));
+            return;
+        }
+        blogEditor.evaluateJavascript("window.applyCommand('"
+                + command + "','" + value + "')", null);
+    }
+
+    private void runBlogEditorColor(String color) {
+        if (!blogEditorReady) {
+            showMessage(getString(R.string.create_blog_editor_loading));
+            return;
+        }
+        blogEditor.evaluateJavascript("window.applyColor('" + color + "')", null);
+    }
+
+    private void pickBlogImages() {
+        withSavedBlogSelection(() -> imagePicker.launch("image/*"));
+    }
+
+    private static String blogEditorDocument() {
+        return "<!doctype html><html><head><meta name='viewport' "
+                + "content='width=device-width, initial-scale=1'>"
+                + "<style>html,body{margin:0;padding:0;background:transparent;}"
+                + "body{font-family:sans-serif;color:#292929;font-size:16px;}"
+                + "#editor{box-sizing:border-box;min-height:280px;padding:14px;"
+                + "outline:none;overflow-wrap:anywhere;line-height:1.6;}"
+                + "#editor h1{font-size:28px}#editor h2{font-size:24px}"
+                + "#editor h3{font-size:20px}"
+                + "#editor img{display:block;max-width:100%;height:auto;margin:10px 0;}"
+                + "</style></head><body><div id='editor' contenteditable='true'>"
+                + "<p><br></p></div><script>(function(){"
+                + "var editor=document.getElementById('editor'),savedRange=null;"
+                + "window.saveSelection=function(){var s=window.getSelection();"
+                + "if(s&&s.rangeCount&&(s.anchorNode===editor||editor.contains(s.anchorNode)))"
+                + "savedRange=s.getRangeAt(0).cloneRange();};"
+                + "function restoreSelection(){editor.focus();var s=window.getSelection();"
+                + "if(savedRange){s.removeAllRanges();s.addRange(savedRange);}"
+                + "else{var r=document.createRange();r.selectNodeContents(editor);"
+                + "r.collapse(false);s.removeAllRanges();s.addRange(r);}}"
+                + "document.addEventListener('selectionchange',window.saveSelection);"
+                + "editor.addEventListener('keyup',window.saveSelection);"
+                + "editor.addEventListener('mouseup',window.saveSelection);"
+                + "editor.addEventListener('input',window.saveSelection);"
+                + "window.applyCommand=function(c,v){restoreSelection();"
+                + "document.execCommand('styleWithCSS',false,true);"
+                + "document.execCommand(c,false,v);window.saveSelection();};"
+                + "window.applyColor=function(c){restoreSelection();"
+                + "document.execCommand('styleWithCSS',false,true);"
+                + "document.execCommand('foreColor',false,c);window.saveSelection();};"
+                + "window.insertImage=function(id,src){restoreSelection();"
+                + "var s=window.getSelection(),r=s.getRangeAt(0),img=document.createElement('img');"
+                + "img.setAttribute('data-image-id',id);img.src=src;"
+                + "img.style.maxWidth='100%';img.style.height='auto';"
+                + "img.style.display='block';img.style.margin='10px 0';"
+                + "r.deleteContents();r.insertNode(img);"
+                + "var br=document.createElement('br');img.parentNode.insertBefore(br,img.nextSibling);"
+                + "r.setStartAfter(br);r.collapse(true);s.removeAllRanges();s.addRange(r);"
+                + "window.saveSelection();};"
+                + "window.serializeEditor=function(){var clone=editor.cloneNode(true),"
+                + "images=clone.querySelectorAll('img'),ids=[],untracked=false;"
+                + "for(var i=0;i<images.length;i++){var id=images[i].getAttribute('data-image-id');"
+                + "if(!id){untracked=true;continue;}ids.push(id);"
+                + "images[i].setAttribute('src','__SYNAPSE_IMAGE_'+(ids.length-1)+'__');"
+                + "images[i].removeAttribute('data-image-id');}"
+                + "return JSON.stringify({html:clone.innerHTML,text:editor.innerText||'',"
+                + "imageIds:ids,untrackedImages:untracked});};})();</script></body></html>";
+    }
+
     private void publish() {
         String authorization = getAuthorization();
         if (authorization == null) {
@@ -288,6 +485,16 @@ public final class CreateContentFragment extends Fragment {
             return;
         }
 
+        if (contentType == ContentType.BLOG) {
+            publishBlog(authorization);
+            return;
+        }
+
+        if (contentType == ContentType.MOMENT) {
+            publishMoment(authorization);
+            return;
+        }
+
         String body = bodyInput.getText().toString().trim();
         if (body.isEmpty()) {
             showMessage(getString(R.string.create_content_required));
@@ -298,6 +505,120 @@ public final class CreateContentFragment extends Fragment {
         viewModel.publishText(contentType, titleInput.getText().toString(),
                 summaryInput.getText().toString(), body, tags,
                 selectedCategoryId, selectedVisibility, authorization);
+    }
+
+    private void publishBlog(String authorization) {
+        if (!blogEditorReady) {
+            showMessage(getString(R.string.create_blog_editor_loading));
+            return;
+        }
+        showProgress(getString(R.string.create_content_publishing));
+        String title = titleInput.getText().toString();
+        String summary = summaryInput.getText().toString();
+        String tags = tagsInput.getText().toString();
+        int categoryId = selectedCategoryId;
+        int visibility = selectedVisibility;
+        blogEditor.evaluateJavascript("window.serializeEditor()", result -> {
+            if (!isAdded() || blogEditor == null) {
+                return;
+            }
+            try {
+                String json = new JSONArray("[" + result + "]").getString(0);
+                JSONObject payload = new JSONObject(json);
+                if (payload.optBoolean("untrackedImages")) {
+                    viewModel.fail(getString(R.string.create_blog_untracked_images));
+                    return;
+                }
+                String content = payload.optString("html", "");
+                JSONArray imageIds = payload.optJSONArray("imageIds");
+                int imageCount = imageIds == null ? 0 : imageIds.length();
+                String plainText = payload.optString("text", "")
+                        .replace("\u200B", "").trim();
+                if (content.trim().isEmpty()
+                        || plainText.isEmpty() && imageCount == 0) {
+                    viewModel.fail(getString(R.string.create_content_required));
+                    return;
+                }
+                if (imageCount > 0) {
+                    showMessage(getString(R.string.create_content_uploading));
+                }
+
+                List<Uri> imageUris = new ArrayList<>(imageCount);
+                for (int i = 0; i < imageCount; i++) {
+                    String imageId = imageIds.getString(i);
+                    Uri uri = blogImageSources.get(imageId);
+                    if (uri == null) {
+                        viewModel.fail(getString(R.string.create_blog_editor_invalid));
+                        return;
+                    }
+                    imageUris.add(uri);
+                }
+                ContentResolver resolver = requireContext().getApplicationContext()
+                        .getContentResolver();
+                String readFailed = getString(R.string.create_content_read_failed);
+                imageReader.execute(() -> {
+                    try {
+                        List<ContentRepository.UploadFile> files =
+                                new ArrayList<>(imageUris.size());
+                        for (Uri uri : imageUris) {
+                            files.add(readUploadFile(resolver, uri));
+                        }
+                        viewModel.publishBlog(title, summary, content, tags,
+                                categoryId, files, visibility, authorization);
+                    } catch (Exception error) {
+                        viewModel.fail(readFailed);
+                    }
+                });
+            } catch (Exception error) {
+                viewModel.fail(getString(R.string.create_blog_editor_invalid));
+            }
+        });
+    }
+
+    private void publishMoment(String authorization) {
+        SpannableStringBuilder content = new SpannableStringBuilder(bodyInput.getText());
+        ImageSpan[] imageSpans = content.getSpans(0, content.length(), ImageSpan.class);
+        Arrays.sort(imageSpans, Comparator.comparingInt(content::getSpanStart));
+        if (content.toString().replace("\uFFFC", "").trim().isEmpty()
+                && imageSpans.length == 0) {
+            showMessage(getString(R.string.create_content_required));
+            return;
+        }
+        String html = toMomentHtml(content, imageSpans);
+        if (html.isEmpty()) {
+            showMessage(getString(R.string.create_content_required));
+            return;
+        }
+
+        ContentResolver resolver = requireContext().getApplicationContext()
+                .getContentResolver();
+        List<Uri> imageUris = new ArrayList<>(imageSpans.length);
+        for (ImageSpan imageSpan : imageSpans) {
+            String source = imageSpan.getSource();
+            if (source == null || source.trim().isEmpty()) {
+                showMessage(getString(R.string.create_content_read_failed));
+                return;
+            }
+            imageUris.add(Uri.parse(source));
+        }
+
+        showProgress(imageUris.isEmpty()
+                ? getString(R.string.create_content_publishing)
+                : getString(R.string.create_content_uploading));
+        int visibility = selectedVisibility;
+        List<String> tags = CreateContentViewModel.extractHashtags(content.toString());
+        String readFailed = getString(R.string.create_content_read_failed);
+        imageReader.execute(() -> {
+            try {
+                List<ContentRepository.UploadFile> files = new ArrayList<>(imageUris.size());
+                for (Uri uri : imageUris) {
+                    files.add(readUploadFile(resolver, uri));
+                }
+                viewModel.publishMoment(html, files, tags, visibility, authorization);
+            } catch (Exception error) {
+                viewModel.fail(readFailed);
+            }
+        });
     }
 
     private void publishVideo(String authorization) {
@@ -410,6 +731,14 @@ public final class CreateContentFragment extends Fragment {
         if (uris == null || uris.isEmpty()) {
             return;
         }
+        if (contentType == ContentType.BLOG) {
+            insertImagesIntoBlog(uris);
+            return;
+        }
+        if (contentType == ContentType.MOMENT) {
+            insertImagesIntoMoment(uris);
+            return;
+        }
         selectedImages.clear();
         if (uris.size() > MAX_IMAGES) {
             selectedImages.addAll(uris.subList(0, MAX_IMAGES));
@@ -420,6 +749,273 @@ public final class CreateContentFragment extends Fragment {
         }
         imagesStatus.setText(getString(R.string.create_content_images_selected,
                 selectedImages.size()));
+    }
+
+    private void insertImagesIntoBlog(List<Uri> uris) {
+        int available = MAX_IMAGES - blogImageSources.size();
+        if (available <= 0) {
+            Toast.makeText(requireContext(), R.string.create_blog_editor_image_limit,
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        int count = Math.min(available, uris.size());
+        if (count < uris.size()) {
+            Toast.makeText(requireContext(), R.string.create_blog_editor_image_limit,
+                    Toast.LENGTH_SHORT).show();
+        }
+        List<Uri> selected = new ArrayList<>(uris.subList(0, count));
+        List<String> imageIds = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            imageIds.add(UUID.randomUUID().toString().replace("-", ""));
+        }
+        int targetWidth = blogEditor.getWidth() - (int) (28
+                * getResources().getDisplayMetrics().density);
+        if (targetWidth <= 0) {
+            targetWidth = (int) (280 * getResources().getDisplayMetrics().density);
+        }
+        int imageWidth = targetWidth;
+        ContentResolver resolver = requireContext().getApplicationContext()
+                .getContentResolver();
+        Activity activity = requireActivity();
+        blogInsertImageButton.setEnabled(false);
+        publishButton.setEnabled(false);
+        progress.setVisibility(View.VISIBLE);
+        showMessage(getString(R.string.create_content_preparing_images));
+        imageReader.execute(() -> {
+            List<String> previews = new ArrayList<>(selected.size());
+            try {
+                for (Uri uri : selected) {
+                    previews.add(createBlogImagePreview(resolver, uri, imageWidth));
+                }
+            } catch (Exception error) {
+                activity.runOnUiThread(() -> {
+                    if (isAdded() && blogEditor != null) {
+                        finishBlogImagePreparation(
+                                getString(R.string.create_content_read_failed));
+                    }
+                });
+                return;
+            }
+            activity.runOnUiThread(() -> {
+                if (!isAdded() || blogEditor == null) {
+                    return;
+                }
+                for (int i = 0; i < selected.size(); i++) {
+                    String imageId = imageIds.get(i);
+                    blogImageSources.put(imageId, selected.get(i));
+                    blogEditor.evaluateJavascript("window.insertImage('"
+                            + imageId + "','" + previews.get(i) + "')", null);
+                }
+                finishBlogImagePreparation("");
+            });
+        });
+    }
+
+    private void finishBlogImagePreparation(String message) {
+        progress.setVisibility(View.GONE);
+        blogInsertImageButton.setEnabled(true);
+        publishButton.setEnabled(!Boolean.TRUE.equals(viewModel.getPublishing().getValue()));
+        showMessage(message);
+    }
+
+    private void insertImagesIntoMoment(List<Uri> uris) {
+        SpannableStringBuilder currentContent =
+                new SpannableStringBuilder(bodyInput.getText());
+        ImageSpan[] existingSpans = currentContent.getSpans(
+                0, currentContent.length(), ImageSpan.class);
+        int available = MAX_IMAGES - existingSpans.length;
+        if (available <= 0) {
+            Toast.makeText(requireContext(), R.string.create_content_too_many_images,
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        int count = Math.min(available, uris.size());
+        if (count < uris.size()) {
+            Toast.makeText(requireContext(), R.string.create_content_too_many_images,
+                    Toast.LENGTH_SHORT).show();
+        }
+
+        int selectionStart = Math.max(0, bodyInput.getSelectionStart());
+        int selectionEnd = Math.max(selectionStart, bodyInput.getSelectionEnd());
+        int targetWidth = bodyInput.getWidth() - bodyInput.getPaddingLeft()
+                - bodyInput.getPaddingRight();
+        if (targetWidth <= 0) {
+            targetWidth = (int) (280 * getResources().getDisplayMetrics().density);
+        }
+        ContentResolver resolver = requireContext().getApplicationContext()
+                .getContentResolver();
+        List<Uri> selected = new ArrayList<>(uris.subList(0, count));
+        int imageWidth = targetWidth;
+        Activity activity = requireActivity();
+        publishButton.setEnabled(false);
+        insertImagesButton.setEnabled(false);
+        bodyInput.setEnabled(false);
+        progress.setVisibility(View.VISIBLE);
+        showMessage(getString(R.string.create_content_preparing_images));
+        imageReader.execute(() -> {
+            List<ImageSpan> spans = new ArrayList<>(selected.size());
+            try {
+                for (Uri uri : selected) {
+                    spans.add(createInlineImageSpan(resolver, uri, imageWidth));
+                }
+            } catch (Exception error) {
+                activity.runOnUiThread(() -> {
+                    if (isAdded() && bodyInput != null) {
+                        finishInlineImagePreparation(
+                                getString(R.string.create_content_read_failed));
+                    }
+                });
+                return;
+            }
+            activity.runOnUiThread(() -> {
+                if (!isAdded()) {
+                    return;
+                }
+                if (bodyInput == null) {
+                    return;
+                }
+                SpannableStringBuilder updated =
+                        new SpannableStringBuilder(bodyInput.getText());
+                int start = Math.min(selectionStart, updated.length());
+                int end = Math.min(selectionEnd, updated.length());
+                if (end > start) {
+                    updated.delete(start, end);
+                }
+                int cursor = start;
+                for (ImageSpan span : spans) {
+                    if (cursor > 0 && updated.charAt(cursor - 1) != '\n') {
+                        updated.insert(cursor++, "\n");
+                    }
+                    updated.insert(cursor, "\uFFFC\n");
+                    updated.setSpan(span, cursor, cursor + 1,
+                            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    cursor += 2;
+                }
+                bodyInput.setText(updated);
+                bodyInput.setSelection(Math.min(cursor, updated.length()));
+                finishInlineImagePreparation("");
+            });
+        });
+    }
+
+    private void finishInlineImagePreparation(String message) {
+        progress.setVisibility(View.GONE);
+        publishButton.setEnabled(!Boolean.TRUE.equals(viewModel.getPublishing().getValue()));
+        insertImagesButton.setEnabled(true);
+        bodyInput.setEnabled(true);
+        showMessage(message);
+    }
+
+    private static ImageSpan createInlineImageSpan(ContentResolver resolver, Uri uri,
+                                                   int maxWidth) throws IOException {
+        Bitmap bitmap = decodeScaledImage(resolver, uri, maxWidth);
+        BitmapDrawable drawable = new BitmapDrawable(
+                android.content.res.Resources.getSystem(), bitmap);
+        drawable.setBounds(0, 0, bitmap.getWidth(), bitmap.getHeight());
+        return new ImageSpan(drawable, uri.toString());
+    }
+
+    private static String createBlogImagePreview(ContentResolver resolver, Uri uri,
+                                                 int maxWidth) throws IOException {
+        Bitmap bitmap = decodeScaledImage(resolver, uri, maxWidth);
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 82, output)) {
+                throw new IOException("Image preview could not be encoded.");
+            }
+            return "data:image/jpeg;base64,"
+                    + Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP);
+        } finally {
+            bitmap.recycle();
+        }
+    }
+
+    private static Bitmap decodeScaledImage(ContentResolver resolver, Uri uri, int maxWidth)
+            throws IOException {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        try (InputStream input = resolver.openInputStream(uri)) {
+            if (input == null) {
+                throw new IOException("Image stream is unavailable.");
+            }
+            BitmapFactory.decodeStream(input, null, bounds);
+        }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            throw new IOException("Image dimensions are unavailable.");
+        }
+
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inSampleSize = 1;
+        while (bounds.outWidth / (options.inSampleSize * 2) >= maxWidth) {
+            options.inSampleSize *= 2;
+        }
+        Bitmap bitmap;
+        try (InputStream input = resolver.openInputStream(uri)) {
+            if (input == null) {
+                throw new IOException("Image stream is unavailable.");
+            }
+            bitmap = BitmapFactory.decodeStream(input, null, options);
+        }
+        if (bitmap == null) {
+            throw new IOException("Image could not be decoded.");
+        }
+        if (bitmap.getWidth() > maxWidth) {
+            int height = Math.max(1,
+                    bitmap.getHeight() * maxWidth / bitmap.getWidth());
+            Bitmap scaled = Bitmap.createScaledBitmap(bitmap, maxWidth, height, true);
+            if (scaled != bitmap) {
+                bitmap.recycle();
+            }
+            bitmap = scaled;
+        }
+        return bitmap;
+    }
+
+    private static String toMomentHtml(Spanned content, ImageSpan[] imageSpans) {
+        StringBuilder html = new StringBuilder();
+        StringBuilder text = new StringBuilder();
+        int imageIndex = 0;
+        for (int position = 0; position < content.length(); position++) {
+            if (imageIndex < imageSpans.length
+                    && content.getSpanStart(imageSpans[imageIndex]) == position) {
+                appendParagraph(html, text);
+                html.append("<p><img src=\"__SYNAPSE_IMAGE_")
+                        .append(imageIndex++)
+                        .append("__\" alt=\"\"></p>");
+                position = Math.max(position,
+                        content.getSpanEnd(imageSpans[imageIndex - 1]) - 1);
+                if (position + 1 < content.length()
+                        && content.charAt(position + 1) == '\n') {
+                    position++;
+                }
+                continue;
+            }
+            char character = content.charAt(position);
+            if (character == '\uFFFC') {
+                continue;
+            }
+            if (character == '\n') {
+                text.append("<br>");
+            } else {
+                text.append(escapeHtml(String.valueOf(character)));
+            }
+        }
+        appendParagraph(html, text);
+        return html.toString();
+    }
+
+    private static void appendParagraph(StringBuilder html, StringBuilder text) {
+        if (text.length() > 0) {
+            html.append("<p>").append(text).append("</p>");
+            text.setLength(0);
+        }
+    }
+
+    private static String escapeHtml(String value) {
+        return value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 
     private void showProgress(String message) {
@@ -562,6 +1158,15 @@ public final class CreateContentFragment extends Fragment {
     @Override
     public void onDestroyView() {
         imageReader.shutdownNow();
+        blogEditorReady = false;
+        blogImageSources.clear();
+        if (blogEditor != null) {
+            blogEditor.stopLoading();
+            blogEditor.setWebViewClient(null);
+            blogEditor.loadUrl("about:blank");
+            blogEditor.destroy();
+            blogEditor = null;
+        }
         super.onDestroyView();
     }
 }

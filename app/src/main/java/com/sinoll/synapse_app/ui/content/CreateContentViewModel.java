@@ -15,11 +15,19 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Future;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class CreateContentViewModel extends ViewModel {
+
+    private static final Pattern HASHTAG_PATTERN =
+            Pattern.compile("(?<!#)#([^#]+)#(?!#)");
+    private static final int MAX_TAGS = 20;
 
     private final ContentRepository repository =
             new ContentRepository(ApiClient.forApplication());
@@ -128,6 +136,58 @@ public final class CreateContentViewModel extends ViewModel {
             return;
         }
         submit(repository.createGallery(caption, files, visibility, authorization, callback()));
+    }
+
+    public void publishBlog(String title, String summary, String content, String tags,
+                            int cateId, List<ContentRepository.UploadFile> inlineImages,
+                            int visibility, String authorization) {
+        if (content == null || content.trim().isEmpty()) {
+            fail("请填写正文内容。");
+            return;
+        }
+        if (!isValidVisibility(visibility)) {
+            fail("请选择有效的可见范围。");
+            return;
+        }
+        JSONObject body = new JSONObject();
+        try {
+            body.put("content", content);
+            String normalizedTitle = trimToNull(title);
+            if (normalizedTitle != null) {
+                body.put("title", normalizedTitle);
+            }
+            String normalizedSummary = trimToNull(summary);
+            if (normalizedSummary != null) {
+                body.put("summary", normalizedSummary);
+            }
+            if (cateId > 0) {
+                body.put("cate_id", cateId);
+            }
+            JSONArray tagArray = parseTags(tags);
+            if (tagArray.length() > 0) {
+                body.put("tags", tagArray);
+            }
+            body.put("status", 1);
+            body.put("visibility", visibility);
+        } catch (JSONException error) {
+            fail("无法构建发布内容。");
+            return;
+        }
+        submit(repository.createBlog(body, inlineImages, authorization, callback()));
+    }
+
+    public void publishMoment(String content, List<ContentRepository.UploadFile> inlineImages,
+                              List<String> tags, int visibility, String authorization) {
+        if (content == null || content.trim().isEmpty()) {
+            fail("请填写正文内容。");
+            return;
+        }
+        if (!isValidVisibility(visibility)) {
+            fail("请选择有效的可见范围。");
+            return;
+        }
+        submit(repository.createMoment(content, inlineImages, tags, visibility,
+                authorization, callback()));
     }
 
     public void uploadVideo(ContentRepository.UploadStream video, String authorization) {
@@ -285,6 +345,21 @@ public final class CreateContentViewModel extends ViewModel {
             }
         }
         return tags;
+    }
+
+    static List<String> extractHashtags(String content) {
+        LinkedHashSet<String> tags = new LinkedHashSet<>();
+        if (content == null) {
+            return new ArrayList<>();
+        }
+        Matcher matcher = HASHTAG_PATTERN.matcher(content);
+        while (matcher.find() && tags.size() < MAX_TAGS) {
+            String tag = matcher.group(1).trim();
+            if (!tag.isEmpty()) {
+                tags.add(tag);
+            }
+        }
+        return new ArrayList<>(tags);
     }
 
     private static String trimToNull(String value) {

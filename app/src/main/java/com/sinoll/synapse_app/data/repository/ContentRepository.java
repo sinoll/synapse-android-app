@@ -15,6 +15,7 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -84,6 +85,78 @@ public final class ContentRepository implements AutoCloseable {
         return executor.submit(() -> {
             try {
                 callback.onSuccess(apiClient.post(type.getEndpoint(), body, authorization));
+            } catch (Exception error) {
+                callback.onError(error);
+            }
+        });
+    }
+
+    public Future<?> createBlog(JSONObject body, List<UploadFile> inlineImages,
+                                String authorization, Callback<JSONObject> callback) {
+        if (body == null || callback == null) {
+            throw new IllegalArgumentException("body and callback are required.");
+        }
+        return executor.submit(() -> {
+            try {
+                String content = body.optString("content", "");
+                List<String> imagePaths = new ArrayList<>();
+                if (inlineImages != null) {
+                    for (UploadFile file : inlineImages) {
+                        JSONObject upload = apiClient.upload("blog", file.getFileName(),
+                                file.getMimeType(), file.getData(), authorization);
+                        String path = uploadedImagePath(upload);
+                        if (path.isEmpty()) {
+                            throw new IllegalStateException("图片上传响应缺少路径。");
+                        }
+                        imagePaths.add(path);
+                    }
+                }
+                body.put("content", replaceImagePlaceholders(content, imagePaths));
+                callback.onSuccess(apiClient.post("blog", body, authorization));
+            } catch (Exception error) {
+                callback.onError(error);
+            }
+        });
+    }
+
+    public Future<?> createMoment(String content, List<UploadFile> inlineImages,
+                                  List<String> tags, int visibility, String authorization,
+                                  Callback<JSONObject> callback) {
+        if (content == null || callback == null) {
+            throw new IllegalArgumentException("content and callback are required.");
+        }
+        return executor.submit(() -> {
+            try {
+                String publishedContent = content;
+                List<String> imagePaths = new ArrayList<>();
+                if (inlineImages != null) {
+                    for (UploadFile file : inlineImages) {
+                        JSONObject upload = apiClient.upload("moment", file.getFileName(),
+                                file.getMimeType(), file.getData(), authorization);
+                        String path = uploadedImagePath(upload);
+                        if (path.isEmpty()) {
+                            throw new IllegalStateException("图片上传响应缺少路径。");
+                        }
+                        imagePaths.add(path);
+                    }
+                }
+                publishedContent = replaceImagePlaceholders(publishedContent, imagePaths);
+                JSONObject body = new JSONObject();
+                body.put("content", publishedContent);
+                if (tags != null && !tags.isEmpty()) {
+                    JSONArray tagArray = new JSONArray();
+                    for (String tag : tags) {
+                        if (tag != null && !tag.trim().isEmpty()) {
+                            tagArray.put(tag.trim());
+                        }
+                    }
+                    if (tagArray.length() > 0) {
+                        body.put("tags", tagArray);
+                    }
+                }
+                body.put("status", 1);
+                body.put("visibility", visibility);
+                callback.onSuccess(apiClient.post("moment", body, authorization));
             } catch (Exception error) {
                 callback.onError(error);
             }
@@ -257,6 +330,14 @@ public final class ContentRepository implements AutoCloseable {
             return "";
         }
         return upload.optString("thumbnail_path", "");
+    }
+
+    static String replaceImagePlaceholders(String content, List<String> imagePaths) {
+        String result = content;
+        for (int i = 0; i < imagePaths.size(); i++) {
+            result = result.replace("__SYNAPSE_IMAGE_" + i + "__", imagePaths.get(i));
+        }
+        return result;
     }
 
     private static String trimToNull(String value) {
