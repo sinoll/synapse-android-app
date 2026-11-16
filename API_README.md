@@ -63,6 +63,67 @@ curl -s -X POST $BASE/upload -H "Authorization: Bearer $TOKEN" \
 `YII_DEBUG=true`（`web/index.php`）时错误响应额外带 `debug{type,file,line,trace}`，
 排查完请把它切回生产值。
 
+## 站内搜索 `GET /search`
+
+无需登录；可选携带 Bearer 令牌。和网站搜索共用匹配规则，搜索博客、动态、图集和短视频的标题、
+博客摘要和正文、动态正文、短视频简介、图集说明、标签名、分类名及作者用户名或昵称。关键词按字面
+模糊匹配（`%` 和 `_` 不作为通配符）；同一内容即使匹配多张图片或多个标签也只返回一次。
+
+| 查询参数 | 说明 |
+| --- | --- |
+| `q` | 关键词；去除首尾空格后截取前 60 个字符。为空或未提供时返回空结果 |
+| `type` | 可选：`blog`、`moment`、`images`、`short_video`；也接受网站使用的 `video`，响应统一为 `short_video` |
+| `page` | 从 1 开始，默认 1 |
+| `per_page` | 默认 20，上限 100，以 `api.pageSizeDefault` 和 `api.pageSizeMax` 配置为准 |
+
+参数类型或取值不合法返回 422。仅搜索已发布内容：游客只看到公开内容，登录用户还可看到注册用户
+可见内容和自己的私密内容；草稿不会出现在搜索中。结果按创建时间、ID 倒序排列；超出末页返回空数组。
+
+```bash
+curl -G "$BASE/search" --data-urlencode "q=旅行" --data-urlencode "type=blog" \
+     --data-urlencode "page=1" --data-urlencode "per_page=20"
+```
+
+响应 `data` 示例（`items` 中的每项与相应类型的列表接口结构一致，完整字段因类型而异）：
+
+```json
+{
+  "q": "旅行",
+  "type": "blog",
+  "authenticated": false,
+  "page": 1,
+  "per_page": 20,
+  "total": 1,
+  "total_pages": 1,
+  "items": [
+    { "id": 12, "type": "blog", "title": "旅行", "liked": false }
+  ]
+}
+```
+
+不指定类型时 `type` 为 `null`。搜索结果不增加内容浏览量；详情可通过 `/blog/{id}`、
+`/moment/{id}`、`/images/{id}` 或 `/short_video/{id}` 获取。
+
+## @用户与站内消息
+
+以下接口均需要 Bearer 令牌，响应使用上述统一封装：
+
+* `GET /users/suggest?q=关键词`：按用户名或昵称模糊查询活跃用户，排除当前用户，最多 8 条；省略 `q` 时返回候选用户。`data.users` 的每项包含 `id`、`username`、`nickname`、`name` 和 `avatar_url`，不返回邮箱等私密字段。
+* `POST /messages`：发送私信，请求体示例 `{"recipient_username":"alice","content":"你好"}`。收件人必须是其他活跃用户；内容不能为空或超过 5000 字符。响应 `data` 是消息对象。
+* `GET /messages?page=1&per_page=20`：按时间及 ID 倒序返回当前用户发送或接收的消息，`data` 包含 `items`、`page`、`per_page`、`total`、`total_pages`，每页上限与内容列表一致。
+* `GET /messages/{id}`：仅消息发送人和收件人可访问；收件人读取时自动标记已读。
+* `PATCH /messages/{id}/read`：仅收件人可用，幂等标记已读；非收件人及不存在的消息均返回 404。
+* `GET /messages/unread-count`：返回 `data.unread_count`，只统计当前用户收到的未读消息。
+
+消息对象包含 `id`、`type`（`private` 或 `mention`）、`content`、`sender`、`recipient`、
+`source_type`、`source_id`、`read_at`、`created_at`；时间为带时区的 ISO 8601，未读时
+`read_at` 为 null。提及消息的来源为动态或图集；来源可能随后被删除或变为不可见，应通过对应内容
+详情接口重新检查访问权限。
+
+通过 API 创建或更新已发布的动态和图集时，非私密内容中的 `@用户名` 或 `@昵称` 会沿用网站规则
+通知活跃用户；不通知作者本人，同一内容对同一用户只通知一次。草稿和私密内容不发送通知，
+草稿发布后会检查正文。博客、短视频及评论暂不产生提及通知，与现有网站行为一致。
+
 ## 认证
 
 * `POST /auth/login` → `{token, token_type:"Bearer", expires_in, expires_at, user}`。
